@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Third-party binaries - downloaded separately per README, not committed
+bin/*.exe
+bin/*.dll
+
+# Build artifacts
+build/
+dist/
+*.spec.bak
+installer_output/
+
+# App runtime data (lives in %APPDATA% normally, but just in case)
+*.log
+
+# Editor/OS cruft
+.vscode/
+.idea/
+Thumbs.db
