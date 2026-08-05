@@ -13,28 +13,26 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .i18n import t
 from .process_picker_dialog import ProcessPickerDialog
 
 
 class SplitTunnelDialog(QDialog):
     def __init__(self, excluded_processes: list[str], parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Split tunneling")
+        self.setWindowTitle(t("split_tunnel_title"))
         self.setMinimumWidth(480)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(
-            "Приложения из списка ниже идут напрямую в обычный интернет, минуя VPN.\n"
-            "Применяется для любого активного подключения."
-        )
+        info = QLabel(t("split_tunnel_info"))
         info.setWordWrap(True)
         layout.addWidget(info)
 
         row = QHBoxLayout()
         self.processes_edit = QLineEdit(",".join(excluded_processes))
         self.processes_edit.setPlaceholderText("Spotify.exe,Steam.exe")
-        pick_btn = QPushButton("Выбрать из процессов")
+        pick_btn = QPushButton(t("split_tunnel_pick_btn"))
         pick_btn.clicked.connect(self._pick_processes)
         row.addWidget(self.processes_edit)
         row.addWidget(pick_btn)

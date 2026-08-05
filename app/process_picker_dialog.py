@@ -7,11 +7,13 @@ import psutil
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QListWidget, QListWidgetItem, QVBoxLayout
 
+from .i18n import t
+
 
 class ProcessPickerDialog(QDialog):
     def __init__(self, already_selected: list[str], parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Выбрать процессы (мимо туннеля)")
+        self.setWindowTitle(t("process_picker_title"))
         self.setMinimumSize(360, 480)
 
         layout = QVBoxLayout(self)

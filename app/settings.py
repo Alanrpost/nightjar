@@ -16,6 +16,7 @@ class AppSettings:
     last_active_profile: str = ""
     # Split tunneling: .exe names routed direct, bypassing the VPN, for every profile.
     excluded_processes: list[str] = field(default_factory=list)
+    language: str = "ru"
 
 
 def _settings_file():

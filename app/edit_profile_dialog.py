@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QSpinBox,
 )
 
+from .i18n import t
 from .profile_parser import Profile
 
 PROTOCOL_OPTIONS = ["vless", "shadowsocks", "trojan", "hysteria2", "tuic"]
@@ -64,7 +65,7 @@ FIELDS_BY_PROTOCOL = {
 class EditProfileDialog(QDialog):
     def __init__(self, profile: Profile, parent=None) -> None:
         super().__init__(parent)
-        self.setWindowTitle(f"Редактировать: {profile.name}")
+        self.setWindowTitle(t("edit_profile_title", name=profile.name))
         self.setMinimumWidth(620)
         self.original_profile = profile
 
@@ -72,21 +73,21 @@ class EditProfileDialog(QDialog):
         self._field_rows: dict[str, object] = {}
 
         self.name_edit = QLineEdit(profile.name)
-        layout.addRow("Имя профиля", self.name_edit)
+        layout.addRow(t("form_label_name"), self.name_edit)
 
         self.protocol_combo = QComboBox()
         self.protocol_combo.addItems(PROTOCOL_OPTIONS)
         self.protocol_combo.setCurrentText(profile.protocol)
         self.protocol_combo.currentTextChanged.connect(self._update_field_visibility)
-        layout.addRow("Протокол", self.protocol_combo)
+        layout.addRow(t("form_label_protocol"), self.protocol_combo)
 
         self.host_edit = QLineEdit(profile.host)
-        layout.addRow("Сервер (host)", self.host_edit)
+        layout.addRow(t("form_label_host"), self.host_edit)
 
         self.port_spin = QSpinBox()
         self.port_spin.setRange(1, 65535)
         self.port_spin.setValue(profile.port)
-        layout.addRow("Порт", self.port_spin)
+        layout.addRow(t("form_label_port"), self.port_spin)
 
         self.uuid_edit = QLineEdit(profile.uuid)
         self._add_row(layout, "uuid", "UUID", self.uuid_edit)
@@ -136,7 +137,7 @@ class EditProfileDialog(QDialog):
         self._add_row(layout, "spider_x", "Reality spiderX (spx)", self.spider_x_edit)
 
         self.alpn_edit = QLineEdit(",".join(profile.alpn))
-        self._add_row(layout, "alpn", "ALPN (через запятую)", self.alpn_edit)
+        self._add_row(layout, "alpn", t("form_label_alpn"), self.alpn_edit)
 
         self.path_edit = QLineEdit(profile.path)
         self._add_row(layout, "path", "Path (ws/http)", self.path_edit)
@@ -155,7 +156,7 @@ class EditProfileDialog(QDialog):
         self.obfs_password_edit = QLineEdit(profile.obfs_password)
         self._add_row(layout, "obfs_password", "Obfs password", self.obfs_password_edit)
 
-        self.insecure_checkbox = QCheckBox("Пропускать проверку сертификата (insecure)")
+        self.insecure_checkbox = QCheckBox(t("checkbox_insecure"))
         self.insecure_checkbox.setChecked(profile.insecure)
         self._add_row(layout, "insecure", "", self.insecure_checkbox)
 
@@ -193,17 +194,17 @@ class EditProfileDialog(QDialog):
         method = self.method_combo.currentText().strip()
 
         if not name or not host:
-            QMessageBox.warning(self, "Заполните поля", "Имя и сервер обязательны")
+            QMessageBox.warning(self, t("dlg_fill_fields_title"), t("dlg_fill_fields_body"))
             return
 
         if protocol in ("vless", "tuic") and not uuid:
-            QMessageBox.warning(self, "Не хватает данных", "Для этого протокола нужен UUID")
+            QMessageBox.warning(self, t("dlg_missing_data_title"), t("dlg_missing_uuid"))
             return
         if protocol in ("shadowsocks", "trojan", "hysteria2", "tuic") and not password:
-            QMessageBox.warning(self, "Не хватает данных", "Для этого протокола нужен пароль")
+            QMessageBox.warning(self, t("dlg_missing_data_title"), t("dlg_missing_password"))
             return
         if protocol == "shadowsocks" and not method:
-            QMessageBox.warning(self, "Не хватает данных", "Для Shadowsocks нужен method (cipher)")
+            QMessageBox.warning(self, t("dlg_missing_data_title"), t("dlg_missing_method"))
             return
 
         alpn = [a.strip() for a in self.alpn_edit.text().split(",") if a.strip()]
@@ -237,7 +238,7 @@ class EditProfileDialog(QDialog):
 
         if profile.protocol == "vless" and profile.security == "reality" and not profile.public_key:
             QMessageBox.warning(
-                self, "Не хватает данных", "Для security=reality нужен public key (pbk)"
+                self, t("dlg_missing_data_title"), t("dlg_missing_pbk")
             )
             return
 

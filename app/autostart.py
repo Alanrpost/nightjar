@@ -12,8 +12,12 @@ import sys
 from pathlib import Path
 
 from . import paths
+from .i18n import t
 
-TASK_NAME = "VlessClientAutostart"
+TASK_NAME = "NightjarAutostart"
+# Renamed from the app's old name - still cleaned up/recognized so upgrading
+# users don't end up with an orphaned task or a wrong "off" checkbox.
+_LEGACY_TASK_NAME = "VlessClientAutostart"
 
 
 def _pythonw_executable() -> str:
@@ -32,14 +36,34 @@ def is_enabled() -> bool:
         text=True,
         encoding="cp866",
         errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return True
+    # Fall back to the pre-rename task name so an upgrading user's existing
+    # autostart still shows as enabled instead of silently reading as off.
+    legacy = subprocess.run(
+        ["schtasks", "/query", "/tn", _LEGACY_TASK_NAME],
+        capture_output=True,
+        text=True,
+        encoding="cp866",
+        errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    return legacy.returncode == 0
+
+
+def _autostart_command() -> str:
+    if getattr(sys, "frozen", False):
+        # Frozen build: sys.executable is the app's own exe - run it directly.
+        return f'"{sys.executable}" --minimized'
+    python_exe = _pythonw_executable()
+    project_root = paths.project_root()
+    return f'cmd /c "cd /d \\"{project_root}\\" && \\"{python_exe}\\" -m app.main --minimized"'
 
 
 def enable() -> None:
-    python_exe = _pythonw_executable()
-    project_root = paths.project_root()
-    command = f'cmd /c "cd /d \\"{project_root}\\" && \\"{python_exe}\\" -m app.main --minimized"'
+    command = _autostart_command()
 
     result = subprocess.run(
         [
@@ -54,18 +78,29 @@ def enable() -> None:
         text=True,
         encoding="cp866",
         errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            f"Не удалось создать задачу автозапуска: {result.stderr or result.stdout}"
-        )
+        raise RuntimeError(t("autostart_create_failed", error=result.stderr or result.stdout))
 
-
-def disable() -> None:
+    # Clean up the pre-rename task, if any, so it doesn't linger as a duplicate.
     subprocess.run(
-        ["schtasks", "/delete", "/tn", TASK_NAME, "/f"],
+        ["schtasks", "/delete", "/tn", _LEGACY_TASK_NAME, "/f"],
         capture_output=True,
         text=True,
         encoding="cp866",
         errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
     )
+
+
+def disable() -> None:
+    for name in (TASK_NAME, _LEGACY_TASK_NAME):
+        subprocess.run(
+            ["schtasks", "/delete", "/tn", name, "/f"],
+            capture_output=True,
+            text=True,
+            encoding="cp866",
+            errors="replace",
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )

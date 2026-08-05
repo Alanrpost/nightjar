@@ -17,6 +17,11 @@ def app_data_dir() -> Path:
 
 
 def project_root() -> Path:
+    # Frozen (PyInstaller) build: bin/ and assets/ ship next to the exe, not
+    # nested under app/ - __file__ resolves into the bundle's internal data dir,
+    # which doesn't share a layout with the exe's directory.
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
     # app/paths.py -> vless-client/
     return Path(__file__).resolve().parent.parent
 
@@ -26,6 +31,8 @@ def bin_dir() -> Path:
 
 
 def assets_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return project_root() / "assets"
     return Path(__file__).resolve().parent / "assets"
 
 

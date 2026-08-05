@@ -69,7 +69,13 @@ def _remove_orphan_tun_adapter() -> None:
         f"(Get-NetAdapter -Name '{TUN_INTERFACE_NAME}' -ErrorAction SilentlyContinue) -ne $null",
     ]
     try:
-        result = subprocess.run(check_cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(
+            check_cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
     except (subprocess.SubprocessError, OSError):
         return
 
@@ -83,7 +89,13 @@ def _remove_orphan_tun_adapter() -> None:
         f"Remove-NetAdapter -Name '{TUN_INTERFACE_NAME}' -Confirm:$false -ErrorAction SilentlyContinue",
     ]
     try:
-        subprocess.run(remove_cmd, capture_output=True, text=True, timeout=10)
+        subprocess.run(
+            remove_cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
     except (subprocess.SubprocessError, OSError):
         pass
 

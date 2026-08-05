@@ -1,4 +1,4 @@
-# VLESS Client (TUN mode, sing-box backend)
+# Nightjar (TUN mode, sing-box backend)
 
 Минималистичный мультипротокольный клиент для Windows: импорт подключения из
 буфера обмена или QR-кода (как в Happ), TUN-режим (весь трафик ноутбука через
