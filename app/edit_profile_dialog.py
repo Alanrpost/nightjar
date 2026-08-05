@@ -1,6 +1,5 @@
-"""Dialog for editing a profile's connection parameters, similar to Happ's
-server edit screen: every field is exposed and editable, with irrelevant fields
-hidden depending on the selected protocol."""
+"""Dialog for editing a profile's connection parameters: every field is exposed
+and editable, with irrelevant fields hidden depending on the selected protocol."""
 
 from __future__ import annotations
 

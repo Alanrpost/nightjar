@@ -1,5 +1,5 @@
-"""Raw sing-box config editor for a single profile, similar to Happ's JSON editor:
-power users can see and tweak exactly what gets passed to the engine."""
+"""Raw sing-box config editor for a single profile: power users can see and
+tweak exactly what gets passed to the engine."""
 
 from __future__ import annotations
 
