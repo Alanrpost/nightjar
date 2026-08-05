@@ -14,8 +14,12 @@ class AppSettings:
     kill_switch_enabled: bool = True
     auto_connect_on_launch: bool = False
     last_active_profile: str = ""
-    # Split tunneling: .exe names routed direct, bypassing the VPN, for every profile.
+    # Split tunneling: .exe names, meaning depends on split_tunnel_mode - either
+    # the processes routed direct while everything else goes through the VPN
+    # ("exclude", the default), or the only processes routed through the VPN
+    # while everything else goes direct ("include").
     excluded_processes: list[str] = field(default_factory=list)
+    split_tunnel_mode: str = "exclude"
     language: str = "ru"
 
 

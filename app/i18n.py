@@ -54,6 +54,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "entirely until the connection is restored - so traffic doesn't leak "
         "out in the open with your real IP address.",
     },
+    "kill_switch_hint_include": {
+        "ru": "Если туннель неожиданно обрывается, блокирует доступ в интернет "
+        "только для приложений из списка «Раздельное туннелирование» — "
+        "остальной трафик и так шёл напрямую, ему нечего защищать.",
+        "en": "If the tunnel drops unexpectedly, this blocks internet access "
+        "only for the apps in the \"Split tunneling\" list - everything else "
+        "was already going direct, so there's nothing for it to fail safe on.",
+    },
     "autostart_label": {"ru": "Автозапуск с Windows", "en": "Start with Windows"},
     "auto_connect_label": {"ru": "Подключаться при запуске", "en": "Connect on launch"},
     "split_tunnel_btn": {"ru": "Раздельное туннелирование", "en": "Split tunneling"},
@@ -234,20 +242,35 @@ _STRINGS: dict[str, dict[str, str]] = {
 
     # --- split_tunnel_dialog.py ---
     "split_tunnel_title": {"ru": "Раздельное туннелирование", "en": "Split tunneling"},
-    "split_tunnel_info": {
+    "split_tunnel_mode_exclude": {
+        "ru": "VPN для всего, список — напрямую",
+        "en": "VPN for everything, list goes direct",
+    },
+    "split_tunnel_mode_include": {
+        "ru": "Всё напрямую, список — через VPN",
+        "en": "Everything direct, list goes via VPN",
+    },
+    "split_tunnel_info_exclude": {
         "ru": "Приложения из списка ниже идут напрямую в обычный интернет, минуя VPN.\n"
         "Применяется для любого активного подключения.",
         "en": "Apps in the list below go straight to the regular internet, bypassing "
         "the VPN.\nApplies to whichever connection is currently active.",
+    },
+    "split_tunnel_info_include": {
+        "ru": "Весь остальной трафик идёт напрямую, минуя VPN. Через VPN пойдут "
+        "только приложения из списка ниже.\nПрименяется для любого активного "
+        "подключения.",
+        "en": "All other traffic goes straight to the regular internet, bypassing "
+        "the VPN. Only the apps in the list below are routed through the VPN.\n"
+        "Applies to whichever connection is currently active.",
     },
     "split_tunnel_pick_btn": {
         "ru": "Выбрать из процессов", "en": "Pick from running processes",
     },
 
     # --- process_picker_dialog.py ---
-    "process_picker_title": {
-        "ru": "Выбрать процессы (мимо туннеля)", "en": "Select processes (bypass tunnel)",
-    },
+    "process_picker_title": {"ru": "Выбрать процессы", "en": "Select processes"},
+    "process_picker_refresh_btn": {"ru": "Обновить", "en": "Refresh"},
 }
 
 

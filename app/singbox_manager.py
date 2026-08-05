@@ -33,13 +33,27 @@ class SingBoxManager:
     def is_running(self) -> bool:
         return self._process is not None and self._process.poll() is None
 
-    def start(self, profile: Profile, excluded_processes: list[str] | None = None) -> None:
-        config_path = write_config_file(profile, paths.app_data_dir(), excluded_processes)
+    def start(
+        self,
+        profile: Profile,
+        excluded_processes: list[str] | None = None,
+        split_tunnel_mode: str = "exclude",
+    ) -> None:
+        config_path = write_config_file(
+            profile, paths.app_data_dir(), excluded_processes, split_tunnel_mode
+        )
         self._spawn(config_path, label=f"profile '{profile.name}'")
 
-    def start_blockall(self) -> None:
-        """Kill-switch mode: TUN stays up, but every packet is dropped."""
-        config_path = write_blockall_config_file(paths.app_data_dir())
+    def start_blockall(
+        self,
+        excluded_processes: list[str] | None = None,
+        split_tunnel_mode: str = "exclude",
+    ) -> None:
+        """Kill-switch mode: TUN stays up, but traffic that was meant to go
+        through the VPN is dropped instead."""
+        config_path = write_blockall_config_file(
+            paths.app_data_dir(), excluded_processes, split_tunnel_mode
+        )
         self._spawn(config_path, label="kill-switch (block-all)")
 
     def _spawn(self, config_path: Path, label: str) -> None:

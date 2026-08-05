@@ -12,11 +12,13 @@ from PySide6.QtCore import (
     Qt,
     QByteArray,
     QEasingCurve,
+    QLibraryInfo,
     QPointF,
     QRect,
     QRectF,
     QSize,
     QTimer,
+    QTranslator,
     QVariantAnimation,
     Signal,
 )
@@ -62,7 +64,7 @@ from .stats import fetch_traffic, format_bytes, format_duration
 from .profile_parser import Profile, ProfileParseError, looks_like_profile_uri, parse_profile_uri
 
 APP_NAME = "Nightjar"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 STATUS_TICK_MS = 1000
 RECONNECT_DELAYS_MS = [3000, 6000, 12000, 24000, 30000]
@@ -323,6 +325,32 @@ def _make_tray_icon(status_color: str) -> QIcon:
     return QIcon(result)
 
 
+# Kept alive at module scope - QApplication.installTranslator() only holds a
+# weak reference, so a local QTranslator would get garbage-collected right
+# after this function returns and silently stop translating.
+_qt_translator: QTranslator | None = None
+
+
+def _apply_qt_translations(language: str) -> None:
+    """Standard dialog buttons (Save/Cancel/OK/Yes/No, ...) are drawn by Qt
+    itself, not by our own t() strings - they need Qt's own bundled .qm
+    translation loaded to not show up in English regardless of app language."""
+    global _qt_translator
+    app = QApplication.instance()
+    if app is None:
+        return
+    if _qt_translator is not None:
+        app.removeTranslator(_qt_translator)
+        _qt_translator = None
+    if language == "en":
+        return
+    translator = QTranslator()
+    translations_dir = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    if translator.load(f"qtbase_{language}", translations_dir):
+        app.installTranslator(translator)
+        _qt_translator = translator
+
+
 _THEMED_SVG_CACHE: dict[str, str] = {}
 
 
@@ -564,6 +592,7 @@ class MainWindow(QMainWindow):
 
         self.settings = settings.load_settings()
         i18n.set_language(self.settings.language)
+        _apply_qt_translations(self.settings.language)
 
         self.manager = SingBoxManager(on_exit=self.singbox_exited.emit)
         self.singbox_exited.connect(self._on_singbox_exit)
@@ -896,17 +925,17 @@ class MainWindow(QMainWindow):
         layout.addLayout(language_row)
 
         self.kill_switch_checkbox = QCheckBox(t("kill_switch_label"))
-        self.kill_switch_checkbox.setToolTip(t("kill_switch_hint"))
         self.kill_switch_checkbox.setChecked(self.settings.kill_switch_enabled)
         self.kill_switch_checkbox.toggled.connect(self._on_kill_switch_toggled)
         layout.addWidget(self.kill_switch_checkbox)
 
-        self.kill_switch_hint_label = QLabel(t("kill_switch_hint"))
+        self.kill_switch_hint_label = QLabel()
         self.kill_switch_hint_label.setWordWrap(True)
         self.kill_switch_hint_label.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 11px; margin-left: 24px;"
         )
         layout.addWidget(self.kill_switch_hint_label)
+        self._update_kill_switch_hint()
 
         self.autostart_checkbox = QCheckBox(t("autostart_label"))
         try:
@@ -946,6 +975,7 @@ class MainWindow(QMainWindow):
         self.settings.language = language
         settings.save_settings(self.settings)
         i18n.set_language(language)
+        _apply_qt_translations(language)
         self.retranslate_ui()
 
     def retranslate_ui(self) -> None:
@@ -958,8 +988,7 @@ class MainWindow(QMainWindow):
         self.settings_title_label.setText(t("settings_title"))
         self.language_row_label.setText(t("language_label"))
         self.kill_switch_checkbox.setText(t("kill_switch_label"))
-        self.kill_switch_checkbox.setToolTip(t("kill_switch_hint"))
-        self.kill_switch_hint_label.setText(t("kill_switch_hint"))
+        self._update_kill_switch_hint()
         self.autostart_checkbox.setText(t("autostart_label"))
         self.auto_connect_checkbox.setText(t("auto_connect_label"))
         self.split_tunnel_btn.setText(f" {t('split_tunnel_btn')}")
@@ -1179,7 +1208,11 @@ class MainWindow(QMainWindow):
             self.manager.stop()
 
         try:
-            self.manager.start(profile, excluded_processes=self.settings.excluded_processes)
+            self.manager.start(
+                profile,
+                excluded_processes=self.settings.excluded_processes,
+                split_tunnel_mode=self.settings.split_tunnel_mode,
+            )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             if manual:
                 QMessageBox.critical(self, t("dlg_connect_failed_title"), str(exc))
@@ -1240,7 +1273,10 @@ class MainWindow(QMainWindow):
             self.kill_switch_active = False
             return
         try:
-            self.manager.start_blockall()
+            self.manager.start_blockall(
+                excluded_processes=self.settings.excluded_processes,
+                split_tunnel_mode=self.settings.split_tunnel_mode,
+            )
             self.kill_switch_active = True
         except (FileNotFoundError, RuntimeError):
             self.kill_switch_active = False
@@ -1391,11 +1427,15 @@ class MainWindow(QMainWindow):
             )
 
     def open_split_tunnel_settings(self) -> None:
-        dialog = SplitTunnelDialog(self.settings.excluded_processes, self)
+        dialog = SplitTunnelDialog(
+            self.settings.excluded_processes, self.settings.split_tunnel_mode, self
+        )
         if dialog.exec() != SplitTunnelDialog.DialogCode.Accepted:
             return
         self.settings.excluded_processes = dialog.result_processes()
+        self.settings.split_tunnel_mode = dialog.result_mode()
         settings.save_settings(self.settings)
+        self._update_kill_switch_hint()
         if self.active_profile_name is not None:
             QMessageBox.information(
                 self,
@@ -1439,6 +1479,16 @@ class MainWindow(QMainWindow):
     def _on_kill_switch_toggled(self, checked: bool) -> None:
         self.settings.kill_switch_enabled = checked
         settings.save_settings(self.settings)
+
+    def _update_kill_switch_hint(self) -> None:
+        key = (
+            "kill_switch_hint_include"
+            if self.settings.split_tunnel_mode == "include"
+            else "kill_switch_hint"
+        )
+        text = t(key)
+        self.kill_switch_checkbox.setToolTip(text)
+        self.kill_switch_hint_label.setText(text)
 
     def _on_auto_connect_toggled(self, checked: bool) -> None:
         self.settings.auto_connect_on_launch = checked

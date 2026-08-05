@@ -1,5 +1,7 @@
-"""Global split-tunneling settings: .exe names that bypass the VPN, applied to
-whichever profile is currently active."""
+"""Global split-tunneling settings: a list of .exe names plus a mode - either
+those apps bypass the VPN and everything else is tunneled, or those apps are
+the only ones tunneled and everything else goes direct. Applied to whichever
+profile is currently active."""
 
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QRadioButton,
     QVBoxLayout,
 )
 
@@ -18,16 +21,32 @@ from .process_picker_dialog import ProcessPickerDialog
 
 
 class SplitTunnelDialog(QDialog):
-    def __init__(self, excluded_processes: list[str], parent=None) -> None:
+    def __init__(
+        self,
+        excluded_processes: list[str],
+        split_tunnel_mode: str = "exclude",
+        parent=None,
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("split_tunnel_title"))
         self.setMinimumWidth(480)
 
         layout = QVBoxLayout(self)
 
-        info = QLabel(t("split_tunnel_info"))
-        info.setWordWrap(True)
-        layout.addWidget(info)
+        self.exclude_radio = QRadioButton(t("split_tunnel_mode_exclude"))
+        self.include_radio = QRadioButton(t("split_tunnel_mode_include"))
+        if split_tunnel_mode == "include":
+            self.include_radio.setChecked(True)
+        else:
+            self.exclude_radio.setChecked(True)
+        self.exclude_radio.toggled.connect(self._update_info_text)
+        layout.addWidget(self.exclude_radio)
+        layout.addWidget(self.include_radio)
+
+        self.info_label = QLabel()
+        self.info_label.setWordWrap(True)
+        layout.addWidget(self.info_label)
+        self._update_info_text()
 
         row = QHBoxLayout()
         self.processes_edit = QLineEdit(",".join(excluded_processes))
@@ -45,6 +64,10 @@ class SplitTunnelDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+    def _update_info_text(self) -> None:
+        key = "split_tunnel_info_include" if self.include_radio.isChecked() else "split_tunnel_info_exclude"
+        self.info_label.setText(t(key))
+
     def _pick_processes(self) -> None:
         current = [n.strip() for n in self.processes_edit.text().split(",") if n.strip()]
         dialog = ProcessPickerDialog(current, self)
@@ -53,3 +76,6 @@ class SplitTunnelDialog(QDialog):
 
     def result_processes(self) -> list[str]:
         return [p.strip() for p in self.processes_edit.text().split(",") if p.strip()]
+
+    def result_mode(self) -> str:
+        return "include" if self.include_radio.isChecked() else "exclude"
