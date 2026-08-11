@@ -25,6 +25,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QAction,
     QIcon,
+    QImage,
     QPainter,
     QPen,
     QPixmap,
@@ -407,16 +408,22 @@ def _draw_settings_icon(color: str, size: int = 18, dpr: float = 1.0) -> QPixmap
     return _finish_supersampled(pixmap, size, dpr)
 
 
-_POWER_ICON_TEMPLATE = (paths.assets_dir() / "power_icon.svg").read_text(encoding="utf-8")
+_LOGO_PIXMAP: QPixmap | None = None
+_EYE_GLOW_MASK: QImage | None = None
 
 
-def _draw_power_icon(color: str, size: int = 56, dpr: float = 1.0) -> QPixmap:
-    svg_data = _POWER_ICON_TEMPLATE.replace("{color}", color)
-    renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-    pixmap, painter = _new_supersampled_painter(size)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return _finish_supersampled(pixmap, size, dpr)
+def _load_logo_assets() -> tuple[QPixmap, QImage]:
+    """The connect button's face: the Nightjar shield logo, plus an alpha mask
+    isolating just the eyes (generated once from the source artwork by
+    thresholding for its brightest pixels - the eyes are the only strongly lit
+    part of an otherwise dark shield) so they can be tinted per connection
+    state without recoloring the rest of the artwork."""
+    global _LOGO_PIXMAP, _EYE_GLOW_MASK
+    if _LOGO_PIXMAP is None:
+        _LOGO_PIXMAP = QPixmap(str(paths.assets_dir() / "logo.png"))
+    if _EYE_GLOW_MASK is None:
+        _EYE_GLOW_MASK = QImage(str(paths.assets_dir() / "logo_eyes_mask.png"))
+    return _LOGO_PIXMAP, _EYE_GLOW_MASK
 
 
 HOVER_GROW = 0.05  # max size increase on hover, as a fraction of the button's size
@@ -541,17 +548,43 @@ class PowerButton(QPushButton):
         painter.end()
         disc = _finish_supersampled(pixmap, size, dpr)
 
-        icon_size = round(56 / (1 + HOVER_GROW))
-        icon = _draw_power_icon(color, icon_size, dpr)
+        logo, eye_mask = _load_logo_assets()
+        # Fit the whole shield inside the disc without cropping it - the source
+        # art is taller than it is wide, so height ends up the limiting dimension.
+        logo_box = round(disc_radius * 2 * 0.86)
+        scaled_logo = logo.scaled(
+            logo_box, logo_box,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
         composed = QPixmap(disc)
-        icon_painter = QPainter(composed)
-        # Center using the known *logical* sizes, not icon.rect()/composed.rect() -
+        logo_painter = QPainter(composed)
+        logo_painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        # Center using the known *logical* sizes, not rect()/composed.rect() -
         # those report physical pixels once devicePixelRatio is set (e.g. 175 for a
         # nominal 140), which threw centering off by exactly that logical/physical gap.
-        icon_rect = QRect(0, 0, icon_size, icon_size)
-        icon_rect.moveCenter(QRect(0, 0, size, size).center())
-        icon_painter.drawPixmap(icon_rect, icon)
-        icon_painter.end()
+        logo_rect = QRect(0, 0, scaled_logo.width(), scaled_logo.height())
+        logo_rect.moveCenter(QRect(0, 0, size, size).center())
+        logo_painter.drawPixmap(logo_rect, scaled_logo)
+
+        # The eyes light up in the current state color - skipped at idle, where
+        # the shield's own artwork (pale, unlit eyes) already reads correctly.
+        if color != ACCENT:
+            tinted_mask = QImage(eye_mask.size(), QImage.Format.Format_ARGB32_Premultiplied)
+            tinted_mask.fill(Qt.GlobalColor.transparent)
+            mask_painter = QPainter(tinted_mask)
+            mask_painter.drawImage(0, 0, eye_mask)
+            mask_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceIn)
+            mask_painter.fillRect(tinted_mask.rect(), QColor(color))
+            mask_painter.end()
+            scaled_glow = QPixmap.fromImage(tinted_mask).scaled(
+                logo_rect.width(), logo_rect.height(),
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            logo_painter.drawPixmap(logo_rect, scaled_glow)
+
+        logo_painter.end()
         return composed
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
