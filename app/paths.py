@@ -50,3 +50,7 @@ def pid_file() -> Path:
 
 def log_file() -> Path:
     return app_data_dir() / "singbox.log"
+
+
+def update_installer_path(version: str) -> Path:
+    return app_data_dir() / f"Nightjar-Setup-{version}.exe"

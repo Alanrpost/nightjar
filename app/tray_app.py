@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import ctypes
 import dataclasses
+import subprocess
 import threading
 import time
 
@@ -53,7 +54,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 
-from . import autostart, geoip, i18n, paths, profile_store, settings, subscription
+from . import autostart, geoip, i18n, paths, profile_store, settings, subscription, updater
 from .i18n import t
 from .edit_profile_dialog import EditProfileDialog
 from .json_edit_dialog import JsonEditDialog
@@ -65,7 +66,7 @@ from .stats import fetch_traffic, format_bytes, format_duration
 from .profile_parser import Profile, ProfileParseError, looks_like_profile_uri, parse_profile_uri
 
 APP_NAME = "Nightjar"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 STATUS_TICK_MS = 1000
 RECONNECT_DELAYS_MS = [3000, 6000, 12000, 24000, 30000]
@@ -609,6 +610,8 @@ class MainWindow(QMainWindow):
     connection_test_result = Signal(str)
     exit_ip_result = Signal(int, str, str)
     subscription_import_result = Signal(object)
+    update_check_result = Signal(object)
+    update_download_result = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -633,6 +636,8 @@ class MainWindow(QMainWindow):
         self.connection_test_result.connect(self._show_connection_test_result)
         self.exit_ip_result.connect(self._show_exit_ip_result)
         self.subscription_import_result.connect(self._show_subscription_import_result)
+        self.update_check_result.connect(self._show_update_available)
+        self.update_download_result.connect(self._show_update_download_result)
 
         self.profiles = profile_store.load_profiles()
         self.active_profile_name: str | None = None
@@ -684,6 +689,8 @@ class MainWindow(QMainWindow):
             )
             if profile is not None:
                 QTimer.singleShot(500, lambda: self._do_connect(profile, manual=False))
+
+        QTimer.singleShot(3000, self._check_for_updates)
 
     def _enable_dark_titlebar(self) -> None:
         # Cosmetic only - if unsupported (older Windows 10 builds), just skip it.
@@ -1714,6 +1721,49 @@ class MainWindow(QMainWindow):
             )
         else:
             self._schedule_reconnect()
+
+    def _check_for_updates(self) -> None:
+        threading.Thread(target=self._run_update_check, daemon=True).start()
+
+    def _run_update_check(self) -> None:
+        info = updater.check_for_update(APP_VERSION)
+        if info is not None:
+            self.update_check_result.emit(info)
+
+    def _show_update_available(self, info: updater.UpdateInfo) -> None:
+        reply = QMessageBox.question(
+            self,
+            t("dlg_update_available_title"),
+            t("dlg_update_available_body", version=info.version, current=APP_VERSION),
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._start_update_download(info)
+
+    def _start_update_download(self, info: updater.UpdateInfo) -> None:
+        self.tray.showMessage(
+            APP_NAME, t("tray_msg_update_downloading"),
+            QSystemTrayIcon.MessageIcon.Information, 3000,
+        )
+        threading.Thread(
+            target=self._run_update_download, args=(info,), daemon=True
+        ).start()
+
+    def _run_update_download(self, info: updater.UpdateInfo) -> None:
+        dest_path = paths.update_installer_path(info.version)
+        try:
+            updater.download_installer(info.download_url, dest_path)
+            self.update_download_result.emit((dest_path, None))
+        except updater.UpdateError as exc:
+            self.update_download_result.emit((None, str(exc)))
+
+    def _show_update_download_result(self, result: tuple) -> None:
+        dest_path, error = result
+        if error is not None:
+            QMessageBox.warning(self, t("dlg_update_download_failed_title"), error)
+            return
+
+        subprocess.Popen([str(dest_path)])
+        self._quit()
 
     def closeEvent(self, event) -> None:
         event.ignore()

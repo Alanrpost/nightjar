@@ -279,6 +279,21 @@ _STRINGS: dict[str, dict[str, str]] = {
     # --- process_picker_dialog.py ---
     "process_picker_title": {"ru": "Выбрать процессы", "en": "Select processes"},
     "process_picker_refresh_btn": {"ru": "Обновить", "en": "Refresh"},
+
+    # --- updater.py ---
+    "dlg_update_available_title": {"ru": "Доступно обновление", "en": "Update available"},
+    "dlg_update_available_body": {
+        "ru": "Доступна версия {version} (у вас {current}).\n\n"
+        "Скачать и установить сейчас?",
+        "en": "Version {version} is available (you have {current}).\n\n"
+        "Download and install it now?",
+    },
+    "tray_msg_update_downloading": {
+        "ru": "Скачивание обновления...", "en": "Downloading update...",
+    },
+    "dlg_update_download_failed_title": {
+        "ru": "Не удалось скачать обновление", "en": "Failed to download the update",
+    },
 }
 
 

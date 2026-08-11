@@ -1,5 +1,5 @@
 #define MyAppName "Nightjar"
-#define MyAppVersion "1.1.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "nastatuhin"
 #define MyAppExeName "Nightjar.exe"
 #define MyAppSourceDir "dist\Nightjar"
