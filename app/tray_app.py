@@ -53,7 +53,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
 )
 
-from . import autostart, geoip, i18n, paths, profile_store, settings
+from . import autostart, geoip, i18n, paths, profile_store, settings, subscription
 from .i18n import t
 from .edit_profile_dialog import EditProfileDialog
 from .json_edit_dialog import JsonEditDialog
@@ -608,6 +608,7 @@ class MainWindow(QMainWindow):
     singbox_exited = Signal(int)
     connection_test_result = Signal(str)
     exit_ip_result = Signal(int, str, str)
+    subscription_import_result = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -631,6 +632,7 @@ class MainWindow(QMainWindow):
         self.singbox_exited.connect(self._on_singbox_exit)
         self.connection_test_result.connect(self._show_connection_test_result)
         self.exit_ip_result.connect(self._show_exit_ip_result)
+        self.subscription_import_result.connect(self._show_subscription_import_result)
 
         self.profiles = profile_store.load_profiles()
         self.active_profile_name: str | None = None
@@ -1167,7 +1169,9 @@ class MainWindow(QMainWindow):
     def import_from_clipboard(self) -> None:
         clipboard = QApplication.clipboard()
         text = clipboard.text()
-        if text and looks_like_profile_uri(text):
+        if text and (
+            looks_like_profile_uri(text) or subscription.looks_like_subscription_url(text)
+        ):
             self._import_text(text)
             return
 
@@ -1198,6 +1202,11 @@ class MainWindow(QMainWindow):
         self._import_text(decoded)
 
     def _import_text(self, text: str) -> None:
+        text = text.strip()
+        if subscription.looks_like_subscription_url(text):
+            self._import_subscription(text)
+            return
+
         try:
             profile = parse_profile_uri(text)
         except ProfileParseError as exc:
@@ -1208,6 +1217,46 @@ class MainWindow(QMainWindow):
         self._refresh_profile_list()
         QMessageBox.information(
             self, t("dlg_profile_imported_title"), t("dlg_profile_added_body", name=profile.name)
+        )
+
+    def _import_subscription(self, url: str) -> None:
+        self.tray.showMessage(
+            APP_NAME, t("tray_msg_subscription_importing"),
+            QSystemTrayIcon.MessageIcon.Information, 3000,
+        )
+        threading.Thread(
+            target=self._run_subscription_import, args=(url,), daemon=True
+        ).start()
+
+    def _run_subscription_import(self, url: str) -> None:
+        try:
+            profiles = subscription.fetch_subscription_profiles(url)
+            self.subscription_import_result.emit((profiles, None))
+        except subscription.SubscriptionError as exc:
+            self.subscription_import_result.emit((None, str(exc)))
+
+    def _show_subscription_import_result(self, result: tuple) -> None:
+        profiles, error = result
+        if error is not None:
+            QMessageBox.warning(self, t("dlg_import_failed_title"), error)
+            return
+
+        used_names = {p.name for p in self.profiles}
+        for profile in profiles:
+            name = profile.name
+            suffix = 2
+            while name in used_names:
+                name = f"{profile.name} ({suffix})"
+                suffix += 1
+            profile.name = name
+            used_names.add(name)
+            self.profiles = profile_store.add_profile(profile)
+
+        self._refresh_profile_list()
+        QMessageBox.information(
+            self,
+            t("dlg_profile_imported_title"),
+            t("dlg_subscription_imported_body", count=len(profiles)),
         )
 
     def _selected_profile(self):

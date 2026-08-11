@@ -124,8 +124,16 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "dlg_import_failed_title": {"ru": "Импорт не удался", "en": "Import failed"},
     "dlg_import_failed_body": {
-        "ru": "В буфере обмена нет vless-ссылки и не найден QR-код с подключением",
-        "en": "No connection link in the clipboard, and no QR code with a connection was found",
+        "ru": "В буфере обмена нет ссылки на конфигурацию или подписку, и не "
+        "найден QR-код с подключением",
+        "en": "No connection or subscription link in the clipboard, and no QR "
+        "code with a connection was found",
+    },
+    "tray_msg_subscription_importing": {
+        "ru": "Импорт подписки...", "en": "Importing subscription...",
+    },
+    "dlg_subscription_imported_body": {
+        "ru": "Импортировано профилей: {count}", "en": "Imported {count} profile(s)",
     },
     "file_dialog_qr_title": {
         "ru": "Выбрать изображение с QR-кодом", "en": "Select a QR code image",
