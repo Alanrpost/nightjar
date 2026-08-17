@@ -38,9 +38,10 @@ class SingBoxManager:
         profile: Profile,
         excluded_processes: list[str] | None = None,
         split_tunnel_mode: str = "exclude",
+        excluded_domains: list[str] | None = None,
     ) -> None:
         config_path = write_config_file(
-            profile, paths.app_data_dir(), excluded_processes, split_tunnel_mode
+            profile, paths.app_data_dir(), excluded_processes, split_tunnel_mode, excluded_domains
         )
         self._spawn(config_path, label=f"profile '{profile.name}'")
 
@@ -48,11 +49,12 @@ class SingBoxManager:
         self,
         excluded_processes: list[str] | None = None,
         split_tunnel_mode: str = "exclude",
+        excluded_domains: list[str] | None = None,
     ) -> None:
         """Kill-switch mode: TUN stays up, but traffic that was meant to go
         through the VPN is dropped instead."""
         config_path = write_blockall_config_file(
-            paths.app_data_dir(), excluded_processes, split_tunnel_mode
+            paths.app_data_dir(), excluded_processes, split_tunnel_mode, excluded_domains
         )
         self._spawn(config_path, label="kill-switch (block-all)")
 

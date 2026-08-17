@@ -65,7 +65,7 @@ from .stats import fetch_traffic, format_bytes, format_duration
 from .profile_parser import Profile, ProfileParseError, looks_like_profile_uri, parse_profile_uri
 
 APP_NAME = "Nightjar"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 
 STATUS_TICK_MS = 1000
 RECONNECT_DELAYS_MS = [3000, 6000, 12000, 24000, 30000]
@@ -1268,6 +1268,7 @@ class MainWindow(QMainWindow):
                 profile,
                 excluded_processes=self.settings.excluded_processes,
                 split_tunnel_mode=self.settings.split_tunnel_mode,
+                excluded_domains=self.settings.excluded_domains,
             )
         except (FileNotFoundError, RuntimeError, ValueError) as exc:
             if manual:
@@ -1332,6 +1333,7 @@ class MainWindow(QMainWindow):
             self.manager.start_blockall(
                 excluded_processes=self.settings.excluded_processes,
                 split_tunnel_mode=self.settings.split_tunnel_mode,
+                excluded_domains=self.settings.excluded_domains,
             )
             self.kill_switch_active = True
         except (FileNotFoundError, RuntimeError):
@@ -1484,12 +1486,16 @@ class MainWindow(QMainWindow):
 
     def open_split_tunnel_settings(self) -> None:
         dialog = SplitTunnelDialog(
-            self.settings.excluded_processes, self.settings.split_tunnel_mode, self
+            self.settings.excluded_processes,
+            self.settings.split_tunnel_mode,
+            self.settings.excluded_domains,
+            self,
         )
         if dialog.exec() != SplitTunnelDialog.DialogCode.Accepted:
             return
         self.settings.excluded_processes = dialog.result_processes()
         self.settings.split_tunnel_mode = dialog.result_mode()
+        self.settings.excluded_domains = dialog.result_domains()
         settings.save_settings(self.settings)
         self._update_kill_switch_hint()
         if self.active_profile_name is not None:

@@ -1,7 +1,7 @@
-"""Global split-tunneling settings: a list of .exe names plus a mode - either
-those apps bypass the VPN and everything else is tunneled, or those apps are
-the only ones tunneled and everything else goes direct. Applied to whichever
-profile is currently active."""
+"""Global split-tunneling settings: lists of .exe names and domains plus a
+mode - either those apps/sites bypass the VPN and everything else is
+tunneled, or they're the only ones tunneled and everything else goes direct.
+Applied to whichever profile is currently active."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ class SplitTunnelDialog(QDialog):
         self,
         excluded_processes: list[str],
         split_tunnel_mode: str = "exclude",
+        excluded_domains: list[str] | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -48,6 +49,7 @@ class SplitTunnelDialog(QDialog):
         layout.addWidget(self.info_label)
         self._update_info_text()
 
+        layout.addWidget(QLabel(t("split_tunnel_apps_label")))
         row = QHBoxLayout()
         self.processes_edit = QLineEdit(",".join(excluded_processes))
         self.processes_edit.setPlaceholderText("Spotify.exe,Steam.exe")
@@ -56,6 +58,11 @@ class SplitTunnelDialog(QDialog):
         row.addWidget(self.processes_edit)
         row.addWidget(pick_btn)
         layout.addLayout(row)
+
+        layout.addWidget(QLabel(t("split_tunnel_domains_label")))
+        self.domains_edit = QLineEdit(",".join(excluded_domains or []))
+        self.domains_edit.setPlaceholderText("youtube.com,twitter.com")
+        layout.addWidget(self.domains_edit)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -76,6 +83,9 @@ class SplitTunnelDialog(QDialog):
 
     def result_processes(self) -> list[str]:
         return [p.strip() for p in self.processes_edit.text().split(",") if p.strip()]
+
+    def result_domains(self) -> list[str]:
+        return [d.strip().lower() for d in self.domains_edit.text().split(",") if d.strip()]
 
     def result_mode(self) -> str:
         return "include" if self.include_radio.isChecked() else "exclude"

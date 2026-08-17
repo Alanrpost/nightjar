@@ -14,11 +14,13 @@ class AppSettings:
     kill_switch_enabled: bool = True
     auto_connect_on_launch: bool = False
     last_active_profile: str = ""
-    # Split tunneling: .exe names, meaning depends on split_tunnel_mode - either
-    # the processes routed direct while everything else goes through the VPN
-    # ("exclude", the default), or the only processes routed through the VPN
-    # while everything else goes direct ("include").
+    # Split tunneling: .exe names and/or domains, meaning depends on
+    # split_tunnel_mode - either these are routed direct while everything else
+    # goes through the VPN ("exclude", the default), or these are the only
+    # ones routed through the VPN while everything else goes direct
+    # ("include"). Domains match the site itself and any subdomain.
     excluded_processes: list[str] = field(default_factory=list)
+    excluded_domains: list[str] = field(default_factory=list)
     split_tunnel_mode: str = "exclude"
     language: str = "ru"
 

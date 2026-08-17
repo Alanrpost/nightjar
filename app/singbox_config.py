@@ -182,15 +182,16 @@ def build_config(
     profile: Profile,
     excluded_processes: list[str] | None = None,
     split_tunnel_mode: str = "exclude",
+    excluded_domains: list[str] | None = None,
 ) -> dict:
     """Full sing-box config: tun inbound, dns over the proxy, route avoiding loops.
 
-    excluded_processes is a global (not per-profile) split-tunneling list. Its
-    meaning flips with split_tunnel_mode:
+    excluded_processes/excluded_domains are global (not per-profile)
+    split-tunneling lists. Their meaning flips with split_tunnel_mode:
     - "exclude" (default): everything goes through the VPN except these .exe
-      names, which are routed direct.
-    - "include": everything goes direct except these .exe names, which are the
-      only ones routed through the VPN.
+      names and domains, which are routed direct.
+    - "include": everything goes direct except these .exe names and domains,
+      which are the only ones routed through the VPN.
     """
     proxy_all = split_tunnel_mode != "include"
     return {
@@ -200,7 +201,7 @@ def build_config(
                 {"type": "udp", "tag": "proxy-dns", "server": "1.1.1.1", "detour": "proxy"},
                 {"type": "local", "tag": "direct-dns"},
             ],
-            "rules": _build_dns_rules(excluded_processes, split_tunnel_mode),
+            "rules": _build_dns_rules(excluded_processes, excluded_domains, split_tunnel_mode),
             "final": "proxy-dns" if proxy_all else "direct-dns",
             "strategy": "ipv4_only",
         },
@@ -225,7 +226,7 @@ def build_config(
             "auto_detect_interface": True,
             "default_domain_resolver": "direct-dns",
             "final": "proxy" if proxy_all else "direct",
-            "rules": _build_route_rules(excluded_processes, split_tunnel_mode),
+            "rules": _build_route_rules(excluded_processes, excluded_domains, split_tunnel_mode),
         },
         "experimental": {
             "clash_api": {
@@ -235,51 +236,63 @@ def build_config(
     }
 
 
-def _build_route_rules(processes: list[str] | None, split_tunnel_mode: str) -> list[dict]:
+def _build_route_rules(
+    processes: list[str] | None, domains: list[str] | None, split_tunnel_mode: str
+) -> list[dict]:
     rules = [
         {"action": "sniff"},
         {"protocol": "dns", "action": "hijack-dns"},
     ]
+    outbound = "direct" if split_tunnel_mode != "include" else "proxy"
     if processes:
-        rules.append(
-            {
-                "process_name": list(processes),
-                "action": "route",
-                "outbound": "direct" if split_tunnel_mode != "include" else "proxy",
-            }
-        )
+        rules.append({"process_name": list(processes), "action": "route", "outbound": outbound})
+    if domains:
+        rules.append({"domain_suffix": list(domains), "action": "route", "outbound": outbound})
     return rules
 
 
-def _build_dns_rules(processes: list[str] | None, split_tunnel_mode: str) -> list[dict]:
+def _build_dns_rules(
+    processes: list[str] | None, domains: list[str] | None, split_tunnel_mode: str
+) -> list[dict]:
     # In "include" mode most traffic goes direct, so DNS defaults to the local
     # resolver too (no point paying tunnel latency for domains that aren't
-    # going through it) - except the listed processes, which still need their
-    # DNS resolved via the proxy since that's where their traffic actually goes.
-    if split_tunnel_mode == "include" and processes:
-        return [{"process_name": list(processes), "server": "proxy-dns"}]
-    return []
+    # going through it) - except the listed processes/domains, which still
+    # need their DNS resolved via the proxy since that's where their traffic
+    # actually goes.
+    if split_tunnel_mode != "include":
+        return []
+    rules = []
+    if processes:
+        rules.append({"process_name": list(processes), "server": "proxy-dns"})
+    if domains:
+        rules.append({"domain_suffix": list(domains), "server": "proxy-dns"})
+    return rules
 
 
 def build_blockall_config(
     excluded_processes: list[str] | None = None,
     split_tunnel_mode: str = "exclude",
+    excluded_domains: list[str] | None = None,
 ) -> dict:
     """Kill-switch config: keeps the TUN adapter (so the OS still routes through
     us) but drops traffic that was supposed to go through the VPN. Swapped in
     when the real tunnel crashes.
 
     In "exclude" mode that's everything (the tunnel was carrying all traffic),
-    so it blocks by default. In "include" mode only the listed processes were
-    ever meant to go through the VPN, so only those get cut off - the rest of
-    the system's traffic was already going direct and has nothing to fail safe
-    against."""
+    so it blocks by default. In "include" mode only the listed processes/domains
+    were ever meant to go through the VPN, so only those get cut off - the rest
+    of the system's traffic was already going direct and has nothing to fail
+    safe against."""
     if split_tunnel_mode == "include":
         outbounds = [{"type": "direct", "tag": "direct"}, {"type": "block", "tag": "block"}]
         rules = [{"action": "sniff"}]
         if excluded_processes:
             rules.append(
                 {"process_name": list(excluded_processes), "action": "route", "outbound": "block"}
+            )
+        if excluded_domains:
+            rules.append(
+                {"domain_suffix": list(excluded_domains), "action": "route", "outbound": "block"}
             )
         route = {"auto_detect_interface": True, "final": "direct", "rules": rules}
     else:
@@ -309,11 +322,12 @@ def write_blockall_config_file(
     directory: Path | None = None,
     excluded_processes: list[str] | None = None,
     split_tunnel_mode: str = "exclude",
+    excluded_domains: list[str] | None = None,
 ) -> Path:
     directory = directory or Path(tempfile.gettempdir())
     directory.mkdir(parents=True, exist_ok=True)
     config_path = directory / "singbox-blockall-config.json"
-    config = build_blockall_config(excluded_processes, split_tunnel_mode)
+    config = build_blockall_config(excluded_processes, split_tunnel_mode, excluded_domains)
     config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
     return config_path
 
@@ -323,6 +337,7 @@ def write_config_file(
     directory: Path | None = None,
     excluded_processes: list[str] | None = None,
     split_tunnel_mode: str = "exclude",
+    excluded_domains: list[str] | None = None,
 ) -> Path:
     """Write the active config to a temp file and return its path.
 
@@ -336,7 +351,7 @@ def write_config_file(
     if profile.raw_config.strip():
         config_text = profile.raw_config
     else:
-        config = build_config(profile, excluded_processes, split_tunnel_mode)
+        config = build_config(profile, excluded_processes, split_tunnel_mode, excluded_domains)
         config_text = json.dumps(config, indent=2)
 
     config_path.write_text(config_text, encoding="utf-8")

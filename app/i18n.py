@@ -56,11 +56,12 @@ _STRINGS: dict[str, dict[str, str]] = {
     },
     "kill_switch_hint_include": {
         "ru": "Если туннель неожиданно обрывается, блокирует доступ в интернет "
-        "только для приложений из списка «Раздельное туннелирование» — "
-        "остальной трафик и так шёл напрямую, ему нечего защищать.",
+        "только для приложений и сайтов из списка «Раздельное туннелирование» "
+        "— остальной трафик и так шёл напрямую, ему нечего защищать.",
         "en": "If the tunnel drops unexpectedly, this blocks internet access "
-        "only for the apps in the \"Split tunneling\" list - everything else "
-        "was already going direct, so there's nothing for it to fail safe on.",
+        "only for the apps and sites in the \"Split tunneling\" list - "
+        "everything else was already going direct, so there's nothing for it "
+        "to fail safe on.",
     },
     "autostart_label": {"ru": "Автозапуск с Windows", "en": "Start with Windows"},
     "auto_connect_label": {"ru": "Подключаться при запуске", "en": "Connect on launch"},
@@ -259,18 +260,24 @@ _STRINGS: dict[str, dict[str, str]] = {
         "en": "Everything direct, list goes via VPN",
     },
     "split_tunnel_info_exclude": {
-        "ru": "Приложения из списка ниже идут напрямую в обычный интернет, минуя VPN.\n"
-        "Применяется для любого активного подключения.",
-        "en": "Apps in the list below go straight to the regular internet, bypassing "
-        "the VPN.\nApplies to whichever connection is currently active.",
+        "ru": "Приложения и сайты из списков ниже идут напрямую в обычный "
+        "интернет, минуя VPN.\nПрименяется для любого активного подключения.",
+        "en": "Apps and sites in the lists below go straight to the regular "
+        "internet, bypassing the VPN.\nApplies to whichever connection is "
+        "currently active.",
     },
     "split_tunnel_info_include": {
         "ru": "Весь остальной трафик идёт напрямую, минуя VPN. Через VPN пойдут "
-        "только приложения из списка ниже.\nПрименяется для любого активного "
-        "подключения.",
+        "только приложения и сайты из списков ниже.\nПрименяется для любого "
+        "активного подключения.",
         "en": "All other traffic goes straight to the regular internet, bypassing "
-        "the VPN. Only the apps in the list below are routed through the VPN.\n"
-        "Applies to whichever connection is currently active.",
+        "the VPN. Only the apps and sites in the lists below are routed "
+        "through the VPN.\nApplies to whichever connection is currently active.",
+    },
+    "split_tunnel_apps_label": {"ru": "Приложения (через запятую)", "en": "Apps (comma-separated)"},
+    "split_tunnel_domains_label": {
+        "ru": "Сайты (через запятую, например youtube.com)",
+        "en": "Sites (comma-separated, e.g. youtube.com)",
     },
     "split_tunnel_pick_btn": {
         "ru": "Выбрать из процессов", "en": "Pick from running processes",
