@@ -14,6 +14,40 @@ from .profile_parser import Profile
 TUN_INTERFACE_NAME = "vless-client-tun"
 CLASH_API_ADDRESS = "127.0.0.1:9090"
 
+# Popular sites that serve their actual content (video, images, CDN assets)
+# from separate domains the average user wouldn't think to list - e.g.
+# youtube.com is just the page shell; playback comes from googlevideo.com.
+# Listing the main site auto-includes these so split tunneling doesn't half-work.
+_KNOWN_DOMAIN_BUNDLES: dict[str, tuple[str, ...]] = {
+    "youtube.com": ("googlevideo.com", "ytimg.com", "ggpht.com", "youtu.be"),
+    "netflix.com": ("nflxvideo.net", "nflximg.net", "nflxext.com"),
+    "twitch.tv": ("ttvnw.net", "jtvnw.net"),
+    "instagram.com": ("cdninstagram.com", "fbcdn.net"),
+    "facebook.com": ("fbcdn.net", "fbsbx.com"),
+    "twitter.com": ("twimg.com",),
+    "x.com": ("twimg.com",),
+    "discord.com": ("discordapp.com", "discordapp.net", "discord.media"),
+    "spotify.com": ("scdn.co",),
+    "telegram.org": ("t.me", "telesco.pe"),
+}
+
+
+def _expand_known_domains(domains: list[str]) -> list[str]:
+    """Add each listed domain's known CDN companions, if any - the site itself
+    stays first in the list, extras appended in a stable order, no duplicates."""
+    expanded = list(domains)
+    seen = {d.lower() for d in domains}
+    for domain in domains:
+        lowered = domain.lower()
+        for site, extras in _KNOWN_DOMAIN_BUNDLES.items():
+            if lowered != site and not lowered.endswith("." + site):
+                continue
+            for extra in extras:
+                if extra not in seen:
+                    expanded.append(extra)
+                    seen.add(extra)
+    return expanded
+
 
 def _build_transport(profile: Profile) -> dict | None:
     if profile.network == "ws":
@@ -194,6 +228,8 @@ def build_config(
       which are the only ones routed through the VPN.
     """
     proxy_all = split_tunnel_mode != "include"
+    if excluded_domains:
+        excluded_domains = _expand_known_domains(excluded_domains)
     return {
         "log": {"level": "info", "timestamp": True},
         "dns": {
@@ -283,6 +319,8 @@ def build_blockall_config(
     were ever meant to go through the VPN, so only those get cut off - the rest
     of the system's traffic was already going direct and has nothing to fail
     safe against."""
+    if excluded_domains:
+        excluded_domains = _expand_known_domains(excluded_domains)
     if split_tunnel_mode == "include":
         outbounds = [{"type": "direct", "tag": "direct"}, {"type": "block", "tag": "block"}]
         rules = [{"action": "sniff"}]
