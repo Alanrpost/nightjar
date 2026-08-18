@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -62,7 +63,7 @@ from .stats import fetch_traffic, format_bytes, format_duration
 from .profile_parser import Profile, ProfileParseError, looks_like_profile_uri, parse_profile_uri
 
 APP_NAME = "Nightjar"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 
 STATUS_TICK_MS = 1000
 RECONNECT_DELAYS_MS = [3000, 6000, 12000, 24000, 30000]
@@ -146,6 +147,25 @@ QCheckBox::indicator {{
 QCheckBox::indicator:checked {{
     background: {ACCENT};
     border-color: {ACCENT};
+}}
+QRadioButton {{
+    spacing: 8px;
+    background: transparent;
+    padding: 4px 0;
+}}
+QRadioButton::indicator {{
+    width: 16px;
+    height: 16px;
+    border-radius: 8px;
+    border: 1px solid {BORDER};
+    background: {BG_CARD_ALT};
+}}
+QRadioButton::indicator:checked {{
+    border: 1px solid {ACCENT};
+    background-color: qradialgradient(
+        cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5,
+        stop:0 {ACCENT}, stop:0.5 {ACCENT}, stop:0.6 {BG_CARD_ALT}, stop:1 {BG_CARD_ALT}
+    );
 }}
 QLineEdit, QPlainTextEdit, QComboBox, QSpinBox {{
     background-color: {BG_CARD};
@@ -697,9 +717,18 @@ class MainWindow(QMainWindow):
         # Show the menu manually instead of QPushButton.setMenu() - setMenu() draws
         # its own dropdown-arrow indicator next to the text, which we don't want.
         btn.clicked.connect(
-            lambda _checked=False, b=btn, m=menu: m.exec(b.mapToGlobal(b.rect().bottomLeft()))
+            lambda _checked=False, b=btn, m=menu: self._exec_button_menu(b, m)
         )
         return btn
+
+    def _exec_button_menu(self, btn: QPushButton, menu: QMenu) -> None:
+        # QPushButton latches its pressed/"down" look on click, and doesn't
+        # reliably clear it once a menu opened via exec() (a nested modal
+        # loop) closes - leaving the button looking stuck pressed until some
+        # unrelated hover/click resets it. Clear it explicitly once exec()
+        # returns.
+        menu.exec(btn.mapToGlobal(btn.rect().bottomLeft()))
+        btn.setDown(False)
 
     def _build_main_page(self) -> QWidget:
         """Header: status (left) + connect toggle (right). Stats row: time /
@@ -745,7 +774,7 @@ class MainWindow(QMainWindow):
         layout.addLayout(stats_row)
 
         self.profile_list = QListWidget()
-        self._row_checkboxes: dict[str, QCheckBox] = {}
+        self._row_radios: dict[str, QRadioButton] = {}
         layout.addWidget(self.profile_list, 1)
 
         footer_row = QHBoxLayout()
@@ -949,7 +978,12 @@ class MainWindow(QMainWindow):
             self.selected_profile_name = None
 
         self.profile_list.clear()
-        self._row_checkboxes = {}
+        self._row_radios = {}
+        # Fresh exclusive group each rebuild - QButtonGroup itself enforces
+        # single-selection across rows, so unlike the old per-row checkboxes
+        # this no longer needs manual "uncheck every other row" bookkeeping.
+        self._profile_radio_group = QButtonGroup(self.profile_list)
+        self._profile_radio_group.setExclusive(True)
 
         for profile in self.profiles:
             item = QListWidgetItem()
@@ -959,12 +993,13 @@ class MainWindow(QMainWindow):
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(4, 2, 4, 2)
 
-            checkbox = QCheckBox()
-            checkbox.setChecked(profile.name == self.selected_profile_name)
-            checkbox.toggled.connect(
+            radio = QRadioButton()
+            radio.setChecked(profile.name == self.selected_profile_name)
+            radio.toggled.connect(
                 lambda checked, name=profile.name: self._on_profile_checked(name, checked)
             )
-            row_layout.addWidget(checkbox)
+            self._profile_radio_group.addButton(radio)
+            row_layout.addWidget(radio)
 
             label_text = f"{profile.name}  ({profile.host}:{profile.port})"
             if profile.raw_config.strip():
@@ -994,24 +1029,19 @@ class MainWindow(QMainWindow):
             # Show the menu manually instead of QPushButton.setMenu() - setMenu()
             # draws its own dropdown-arrow indicator next to the text, which we don't want.
             menu_btn.clicked.connect(
-                lambda _checked=False, b=menu_btn, m=row_menu: m.exec(
-                    b.mapToGlobal(b.rect().bottomLeft())
-                )
+                lambda _checked=False, b=menu_btn, m=row_menu: self._exec_button_menu(b, m)
             )
             row_layout.addWidget(menu_btn)
 
-            self._row_checkboxes[profile.name] = checkbox
+            self._row_radios[profile.name] = radio
             item.setSizeHint(row.sizeHint())
             self.profile_list.setItemWidget(item, row)
 
     def _on_profile_checked(self, name: str, checked: bool) -> None:
+        # The radio group is exclusive, so a row becoming checked already means
+        # every other row was just unchecked - nothing more to do here.
         if checked:
             self.selected_profile_name = name
-            for other_name, checkbox in self._row_checkboxes.items():
-                if other_name != name and checkbox.isChecked():
-                    checkbox.setChecked(False)
-        elif self.selected_profile_name == name:
-            self.selected_profile_name = None
 
     def _open_json_editor(self, profile_name: str) -> None:
         profile = next((p for p in self.profiles if p.name == profile_name), None)
