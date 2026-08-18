@@ -3,7 +3,7 @@ get_language()/t() that read a module-level "current language".
 
 No widget auto-retranslation machinery here - dialogs and menus are built fresh
 each time they're opened, so they pick up the current language automatically the
-next time they're shown. MainWindow's persistent chrome (sidebar, page titles,
+next time they're shown. MainWindow's persistent chrome (page titles,
 checkboxes, tray menu, ...) is retranslated explicitly via
 MainWindow.retranslate_ui() when the language setting changes."""
 
@@ -14,15 +14,13 @@ LANGUAGES = ("ru", "en")
 _current_language = "ru"
 
 _STRINGS: dict[str, dict[str, str]] = {
-    # --- sidebar / header ---
-    "nav_home": {"ru": "Главная", "en": "Home"},
-    "nav_servers": {"ru": "Серверы", "en": "Servers"},
+    # --- header ---
     "nav_settings": {"ru": "Настройки", "en": "Settings"},
 
     # --- home page ---
-    "status_idle": {"ru": "Нажмите для подключения", "en": "Click to connect"},
+    "status_idle": {"ru": "Отключено", "en": "Disconnected"},
     "status_connect_tooltip": {"ru": "Подключиться", "en": "Connect"},
-    "time_label": {"ru": "Время соединения: {value}", "en": "Connection time: {value}"},
+    "time_label": {"ru": "Время: {value}", "en": "Time: {value}"},
     "traffic_label": {"ru": "Трафик: {value}", "en": "Traffic: {value}"},
     "btn_add": {"ru": "Добавить", "en": "Add"},
     "ip_label": {"ru": "IP: {value}", "en": "IP: {value}"},
@@ -35,7 +33,6 @@ _STRINGS: dict[str, dict[str, str]] = {
     "menu_import_manual": {"ru": "Добавить вручную", "en": "Add manually"},
 
     # --- servers page ---
-    "servers_title": {"ru": "Серверы", "en": "Servers"},
     "kebab_edit_json": {"ru": "Редактировать JSON", "en": "Edit JSON"},
     "kebab_edit_profile": {"ru": "Редактировать профиль", "en": "Edit profile"},
     "kebab_delete": {"ru": "Удалить", "en": "Delete"},
@@ -83,6 +80,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
     # --- tray menu / tooltip ---
     "tray_open": {"ru": "Открыть", "en": "Open"},
+    "tray_connect": {"ru": "Подключиться", "en": "Connect"},
     "tray_disconnect": {"ru": "Отключиться", "en": "Disconnect"},
     "tray_quit": {"ru": "Выход", "en": "Exit"},
     "tray_tooltip_disconnected": {

@@ -14,8 +14,6 @@ from PySide6.QtCore import (
     QByteArray,
     QEasingCurve,
     QLibraryInfo,
-    QPointF,
-    QRect,
     QRectF,
     QSize,
     QTimer,
@@ -30,7 +28,6 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QColor,
-    QRadialGradient,
 )
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
@@ -65,7 +62,7 @@ from .stats import fetch_traffic, format_bytes, format_duration
 from .profile_parser import Profile, ProfileParseError, looks_like_profile_uri, parse_profile_uri
 
 APP_NAME = "Nightjar"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.4.0"
 
 STATUS_TICK_MS = 1000
 RECONNECT_DELAYS_MS = [3000, 6000, 12000, 24000, 30000]
@@ -80,15 +77,14 @@ SPLIT_TUNNEL_ICON_SIZE = QSize(20, 20)
 def _speed_test_idle_text() -> str:
     return f" {t('speed_test_idle')}"
 
-SIDEBAR_WIDTH = 190
-POWER_BTN_SIZE = 140
+TOGGLE_WIDTH = 46
+TOGGLE_HEIGHT = 26
 LOG_EXPORT_TAIL_BYTES = 2 * 1024 * 1024
 
 # Palette - "Graphite": monochrome silver pulled from the logo, so app chrome and
 # icon read as one product. Color is reserved almost entirely for connection-state
 # signaling (connecting/connected/error) - everything else stays grayscale.
 BG_APP = "#0C0C0E"
-BG_SIDEBAR = "#141416"
 BG_CARD = "#19191D"
 BG_CARD_ALT = "#1D1D21"
 BG_ACTIVE = "#232328"
@@ -114,10 +110,6 @@ QWidget {{
 }}
 QMainWindow, QDialog, QMessageBox {{
     background-color: {BG_APP};
-}}
-#sidebar {{
-    background-color: {BG_SIDEBAR};
-    border-right: 1px solid {BORDER};
 }}
 QLabel {{
     background: transparent;
@@ -208,27 +200,6 @@ QScrollBar::handle:vertical:hover {{
 }}
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
     height: 0px;
-}}
-"""
-
-NAV_BUTTON_STYLESHEET = f"""
-QPushButton {{
-    text-align: left;
-    padding: 10px 12px;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: {TEXT_MUTED};
-    font-size: 13px;
-}}
-QPushButton:hover {{
-    background: {BG_CARD_ALT};
-    color: {TEXT_PRIMARY};
-}}
-QPushButton:checked {{
-    background: {ACCENT_SOFT};
-    color: {ACCENT};
-    font-weight: 600;
 }}
 """
 
@@ -372,30 +343,6 @@ def _draw_themed_icon(filename: str, color: str, size: int = 20, dpr: float = 1.
     return _finish_supersampled(pixmap, size, dpr)
 
 
-_HOME_ICON_TEMPLATE = (paths.assets_dir() / "home_icon.svg").read_text(encoding="utf-8")
-
-
-def _draw_home_icon(color: str, size: int = 18, dpr: float = 1.0) -> QPixmap:
-    svg_data = _HOME_ICON_TEMPLATE.replace("{color}", color)
-    renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-    pixmap, painter = _new_supersampled_painter(size)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return _finish_supersampled(pixmap, size, dpr)
-
-
-_SERVERS_ICON_TEMPLATE = (paths.assets_dir() / "servers_icon.svg").read_text(encoding="utf-8")
-
-
-def _draw_servers_icon(color: str, size: int = 18, dpr: float = 1.0) -> QPixmap:
-    svg_data = _SERVERS_ICON_TEMPLATE.replace("{color}", color)
-    renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-    pixmap, painter = _new_supersampled_painter(size)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return _finish_supersampled(pixmap, size, dpr)
-
-
 _SETTINGS_ICON_TEMPLATE = (paths.assets_dir() / "settings_icon.svg").read_text(encoding="utf-8")
 
 
@@ -408,33 +355,41 @@ def _draw_settings_icon(color: str, size: int = 18, dpr: float = 1.0) -> QPixmap
     return _finish_supersampled(pixmap, size, dpr)
 
 
-_POWER_ICON_TEMPLATE = (paths.assets_dir() / "power_icon.svg").read_text(encoding="utf-8")
+def _lerp_color(a: QColor, b: QColor, t: float) -> QColor:
+    return QColor(
+        round(a.red() + (b.red() - a.red()) * t),
+        round(a.green() + (b.green() - a.green()) * t),
+        round(a.blue() + (b.blue() - a.blue()) * t),
+    )
 
 
-def _draw_power_icon(color: str, size: int = 56, dpr: float = 1.0) -> QPixmap:
-    svg_data = _POWER_ICON_TEMPLATE.replace("{color}", color)
-    renderer = QSvgRenderer(QByteArray(svg_data.encode("utf-8")))
-    pixmap, painter = _new_supersampled_painter(size)
-    renderer.render(painter, QRectF(0, 0, size, size))
-    painter.end()
-    return _finish_supersampled(pixmap, size, dpr)
+TOGGLE_TRACK_OFF = "#2A2B31"
+TOGGLE_THUMB_MARGIN = 3.0
+# Extra transparent padding around the visible pill, baked into the widget's
+# own bounding box. QGraphicsDropShadowEffect gets clipped to its widget's
+# rect, so without this margin the hover glow was cut off in a visible flat
+# edge right at the pill's silhouette instead of fading out softly.
+TOGGLE_GLOW_MARGIN = 10.0
 
 
-HOVER_GROW = 0.05  # max size increase on hover, as a fraction of the button's size
-
-
-class PowerButton(QPushButton):
-    """Circular connect/disconnect button: soft embossed radial-gradient disc with a
-    faint state-colored glow ring, rather than a flat fill with a hard colored border.
-    Grows slightly and glows brighter on hover."""
+class ToggleSwitch(QPushButton):
+    """Compact pill-shaped connect/disconnect switch: a capsule track with a
+    sliding thumb, tinted by the current connection state color and animated
+    between its off (left) and on (right) positions."""
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._state_color = QColor(ACCENT)
-        self._disc_pixmap: QPixmap | None = None
+        self._on = False
+        self._slide = 0.0  # 0 = off/left, 1 = on/right
         self._hover_progress = 0.0
+        self._track_pixmap: QPixmap | None = None
+        self._slide_anim = QVariantAnimation(self)
+        self._slide_anim.setDuration(180)
+        self._slide_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._slide_anim.valueChanged.connect(self._on_slide_anim_value)
         self._hover_anim = QVariantAnimation(self)
-        self._hover_anim.setDuration(180)
+        self._hover_anim.setDuration(150)
         self._hover_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._hover_anim.valueChanged.connect(self._on_hover_anim_value)
         self._glow_effect = QGraphicsDropShadowEffect(self)
@@ -442,48 +397,52 @@ class PowerButton(QPushButton):
         self._glow_effect.setBlurRadius(0)
         self.setGraphicsEffect(self._glow_effect)
         self.setFlat(True)
-        # The app-level QPushButton rule sets `min-height`, which - once this widget
-        # is polished (e.g. on show()) - overrides a plain setFixedSize() for the
-        # height only (width is untouched since no `min-width` is set globally).
-        # Pin all four bounds here, on the widget's own stylesheet, to win that fight.
+        # Same reasoning as elsewhere in this file: the app-level QPushButton rule
+        # sets min-height, which fights a plain setFixedSize() once the widget is
+        # polished - pin all four bounds on the widget's own stylesheet instead.
+        # The pinned size includes TOGGLE_GLOW_MARGIN of transparent padding on
+        # every side, so the widget's real footprint is bigger than the pill
+        # actually painted at its center - see TOGGLE_GLOW_MARGIN above.
+        full_w = TOGGLE_WIDTH + TOGGLE_GLOW_MARGIN * 2
+        full_h = TOGGLE_HEIGHT + TOGGLE_GLOW_MARGIN * 2
         self.setStyleSheet(
             f"QPushButton {{"
             f"    border: none;"
             f"    background: transparent;"
             f"    padding: 0px;"
-            f"    min-width: {POWER_BTN_SIZE}px;"
-            f"    max-width: {POWER_BTN_SIZE}px;"
-            f"    min-height: {POWER_BTN_SIZE}px;"
-            f"    max-height: {POWER_BTN_SIZE}px;"
+            f"    min-width: {full_w}px;"
+            f"    max-width: {full_w}px;"
+            f"    min-height: {full_h}px;"
+            f"    max-height: {full_h}px;"
             f"}}"
         )
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
-    def set_state(self, color: str) -> None:
+    def set_state(self, color: str, on: bool) -> None:
         self._state_color = QColor(color)
-        self._disc_pixmap = self._build_disc_pixmap(color, self.devicePixelRatioF() or 1.0)
-        self._update_glow()
-        self.update()
+        if on != self._on:
+            self._on = on
+            self._slide_anim.stop()
+            self._slide_anim.setStartValue(self._slide)
+            self._slide_anim.setEndValue(1.0 if on else 0.0)
+            self._slide_anim.start()
+        else:
+            self._rebuild()
 
     def refresh(self) -> None:
         """Re-render at the widget's current devicePixelRatioF(). A window's real
         DPI association can settle later than construction time - most reliably
         seen on elevated (UAC) launches - so callers re-invoke this once the
         window is actually on screen instead of trusting the value read earlier."""
-        self.set_state(self._state_color.name())
+        self._rebuild()
 
-    def _update_glow(self) -> None:
-        # Soft ambient glow via a blurred drop shadow with zero offset, rather than
-        # a hard-edged ring - intensifies as the hover animation runs.
-        glow_color = QColor(self._state_color)
-        glow_color.setAlpha(round(220 * self._hover_progress))
-        self._glow_effect.setColor(glow_color)
-        self._glow_effect.setBlurRadius(28 * self._hover_progress)
+    def _on_slide_anim_value(self, value) -> None:
+        self._slide = float(value)
+        self._rebuild()
 
     def _on_hover_anim_value(self, value) -> None:
         self._hover_progress = float(value)
-        self._update_glow()
-        self.update()
+        self._rebuild()
 
     def enterEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().enterEvent(event)
@@ -499,73 +458,72 @@ class PowerButton(QPushButton):
         self._hover_anim.setEndValue(0.0)
         self._hover_anim.start()
 
-    def _build_disc_pixmap(self, color: str, dpr: float) -> QPixmap:
-        """Everything the button shows - glow ring, gradient disc, icon - composed
-        once into a single pre-antialiased pixmap at set_state() time,
-        rather than drawn live in paintEvent(). Drawing straight onto the widget
-        with QPainter(self) turned out to still come out jagged on this app's
-        elevated (UAC "runas") window specifically, even with correct Per-Monitor-V2
-        DPI awareness confirmed - something about how DWM composites elevated
-        windows, not this process's own DPI setup. Compositing everything into a
-        supersampled-then-downscaled pixmap first, and blitting only that single
-        finished pixmap in paintEvent(), keeps the whole disc smooth regardless."""
-        size = POWER_BTN_SIZE
-        pixmap, painter = _new_supersampled_painter(size)
+    def _rebuild(self) -> None:
+        dpr = self.devicePixelRatioF() or 1.0
+        self._track_pixmap = self._build_track_pixmap(self._state_color, dpr)
+        glow_color = QColor(self._state_color)
+        glow_color.setAlpha(round(160 * self._hover_progress))
+        self._glow_effect.setColor(glow_color)
+        self._glow_effect.setBlurRadius(14 * self._hover_progress)
+        self.update()
 
-        center = QPointF(size / 2, size / 2)
-        # Rendered slightly smaller than the widget's own bounds, leaving headroom
-        # for paintEvent() to scale this pixmap up by up to HOVER_GROW on hover
-        # without clipping against the widget's edge.
-        radius = (size / 2) / (1 + HOVER_GROW)
+    def _build_track_pixmap(self, color: QColor, dpr: float) -> QPixmap:
+        """Track, border and thumb composed into one pre-antialiased pixmap per
+        frame - same supersample-then-downscale approach as the rest of this
+        file's hand-drawn widgets, just sized for a w != h capsule instead of a
+        square icon, so it can't go through _new_supersampled_painter()/
+        _finish_supersampled() (both assume a square). Canvas is the widget's
+        full padded size (TOGGLE_GLOW_MARGIN on every side); the pill itself is
+        drawn inset by that margin so it lands centered in the widget."""
+        w = TOGGLE_WIDTH + TOGGLE_GLOW_MARGIN * 2
+        h = TOGGLE_HEIGHT + TOGGLE_GLOW_MARGIN * 2
+        big = QPixmap(round(w * _ICON_SUPERSAMPLE), round(h * _ICON_SUPERSAMPLE))
+        big.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(big)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.scale(_ICON_SUPERSAMPLE, _ICON_SUPERSAMPLE)
+        painter.translate(TOGGLE_GLOW_MARGIN, TOGGLE_GLOW_MARGIN)
 
-        # Outer glow ring, tinted by the current state color.
-        glow = QColor(color)
-        glow.setAlpha(150)
-        painter.setPen(QPen(glow, 2))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(center, radius - 1.5, radius - 1.5)
+        pill_w, pill_h = TOGGLE_WIDTH, TOGGLE_HEIGHT
+        off_color = QColor(TOGGLE_TRACK_OFF)
+        track_color = _lerp_color(off_color, color, self._slide)
+        border_color = QColor(color)
+        border_color.setAlpha(round(90 + 130 * max(self._slide, self._hover_progress * 0.3)))
 
-        # Main disc: radial gradient for an embossed, non-flat look. Kept clearly
-        # lighter than the window background so the button reads as a raised disc.
-        # Sized to reach right up under the ring stroke, not leave a visible gap.
-        disc_radius = radius - 2
-        gradient = QRadialGradient(
-            QPointF(center.x(), center.y() - disc_radius * 0.25), disc_radius * 1.15
-        )
-        gradient.setColorAt(0.0, QColor("#363c48"))
-        gradient.setColorAt(0.55, QColor("#23272f"))
-        gradient.setColorAt(1.0, QColor("#16181d"))
+        radius = pill_h / 2
+        track_rect = QRectF(0.75, 0.75, pill_w - 1.5, pill_h - 1.5)
+        painter.setPen(QPen(border_color, 1.5))
+        painter.setBrush(track_color)
+        painter.drawRoundedRect(track_rect, radius, radius)
+
+        thumb_d = pill_h - TOGGLE_THUMB_MARGIN * 2
+        travel = pill_w - thumb_d - TOGGLE_THUMB_MARGIN * 2
+        thumb_x = TOGGLE_THUMB_MARGIN + travel * self._slide
+        thumb_color = _lerp_color(color, QColor("#F5F6F8"), self._slide)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(gradient)
-        painter.drawEllipse(center, disc_radius, disc_radius)
+        painter.setBrush(thumb_color)
+        painter.drawEllipse(QRectF(thumb_x, TOGGLE_THUMB_MARGIN, thumb_d, thumb_d))
 
         painter.end()
-        disc = _finish_supersampled(pixmap, size, dpr)
-
-        icon_size = round(56 / (1 + HOVER_GROW))
-        icon = _draw_power_icon(color, icon_size, dpr)
-        composed = QPixmap(disc)
-        icon_painter = QPainter(composed)
-        # Center using the known *logical* sizes, not icon.rect()/composed.rect() -
-        # those report physical pixels once devicePixelRatio is set (e.g. 175 for a
-        # nominal 140), which threw centering off by exactly that logical/physical gap.
-        icon_rect = QRect(0, 0, icon_size, icon_size)
-        icon_rect.moveCenter(QRect(0, 0, size, size).center())
-        icon_painter.drawPixmap(icon_rect, icon)
-        icon_painter.end()
-        return composed
+        physical_w = max(1, round(w * dpr))
+        physical_h = max(1, round(h * dpr))
+        result = big.scaled(
+            physical_w, physical_h,
+            Qt.AspectRatioMode.IgnoreAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        if dpr != 1.0:
+            result.setDevicePixelRatio(dpr)
+        return result
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt override
-        if self._disc_pixmap is None:
+        if self._track_pixmap is None:
             return
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-
-        scale = 1.0 + HOVER_GROW * self._hover_progress
-        w = self.width() * scale
-        h = self.height() * scale
-        target = QRectF((self.width() - w) / 2, (self.height() - h) / 2, w, h)
-        painter.drawPixmap(target, self._disc_pixmap, QRectF(self._disc_pixmap.rect()))
+        painter.drawPixmap(
+            QRectF(self.rect()), self._track_pixmap, QRectF(self._track_pixmap.rect())
+        )
         painter.end()
 
 
@@ -583,8 +541,8 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.resize(760, 560)
-        self.setMinimumSize(680, 520)
+        self.resize(520, 460)
+        self.setMinimumSize(440, 380)
 
         self.icon_disconnected = _make_tray_icon(DISCONNECTED)
         self.icon_connected = _make_tray_icon(CONNECTED)
@@ -625,13 +583,7 @@ class MainWindow(QMainWindow):
         self._add_menu_action_specs: list[tuple] = []
         self._last_status_args: tuple[bool, bool, bool, bool] = (False, False, False, False)
 
-        central = QWidget()
-        root_layout = QHBoxLayout(central)
-        root_layout.setContentsMargins(0, 0, 0, 0)
-        root_layout.setSpacing(0)
-        root_layout.addWidget(self._build_sidebar())
-        root_layout.addWidget(self._build_content(), 1)
-        self.setCentralWidget(central)
+        self.setCentralWidget(self._build_content())
 
         self.status_timer = QTimer(self)
         self.status_timer.timeout.connect(self._tick)
@@ -670,88 +622,29 @@ class MainWindow(QMainWindow):
         except OSError:
             pass
 
-    def _build_sidebar(self) -> QWidget:
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(SIDEBAR_WIDTH)
-        layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(16, 20, 16, 20)
-        layout.setSpacing(4)
-
-        nav_items = [
-            ("nav_home", _draw_home_icon),
-            ("nav_servers", _draw_servers_icon),
-            ("nav_settings", _draw_settings_icon),
-        ]
-        self.nav_buttons: list[QPushButton] = []
-        self._nav_specs: list[tuple[QPushButton, str, object]] = []
-        self._nav_icon_cache: dict[int, tuple[QIcon, QIcon]] = {}
-        self._nav_group = QButtonGroup(sidebar)
-        self._nav_group.setExclusive(True)
-        for index, (label_key, draw_fn) in enumerate(nav_items):
-            btn = QPushButton(f"  {t(label_key)}")
-            btn.setCheckable(True)
-            btn.setStyleSheet(NAV_BUTTON_STYLESHEET)
-            btn.setIconSize(QSize(18, 18))
-            btn.toggled.connect(lambda checked, b=btn: self._apply_nav_icon(b, checked))
-            btn.clicked.connect(lambda _checked=False, i=index: self._show_page(i))
-            self._nav_group.addButton(btn)
-            layout.addWidget(btn)
-            self.nav_buttons.append(btn)
-            self._nav_specs.append((btn, label_key, draw_fn))
-
-        self._refresh_nav_icons()
-
-        layout.addStretch(1)
-
-        self.export_logs_btn = QPushButton(f"  {t('export_logs_btn')}")
-        self.export_logs_btn.setStyleSheet(NAV_BUTTON_STYLESHEET)
-        self.export_logs_btn.setIcon(
-            QIcon(_draw_themed_icon("logs_icon.svg", TEXT_MUTED, 18, self.devicePixelRatioF() or 1.0))
-        )
-        self.export_logs_btn.setIconSize(QSize(18, 18))
-        self.export_logs_btn.clicked.connect(self._export_logs)
-        layout.addWidget(self.export_logs_btn)
-        layout.addSpacing(12)
-
-        # One line, centered - spans the same full sidebar width as the button
-        # above it, so centering here lines its middle up with the button's.
-        brand_label = QLabel(
-            f'<span style="font-weight:700; font-size:13px;">{APP_NAME}</span>'
-            f'&nbsp;&nbsp;<span style="color:{TEXT_MUTED}; font-size:11px;">'
-            f"v{APP_VERSION}</span>"
-        )
-        brand_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(brand_label)
-
-        return sidebar
-
-    def _refresh_nav_icons(self) -> None:
+    def _refresh_settings_icon(self) -> None:
         dpr = self.devicePixelRatioF() or 1.0
-        for btn, _label_key, draw_fn in self._nav_specs:
-            inactive = QIcon(draw_fn(TEXT_MUTED, 18, dpr))
-            active = QIcon(draw_fn(ACCENT, 18, dpr))
-            self._nav_icon_cache[id(btn)] = (inactive, active)
-            btn.setIcon(active if btn.isChecked() else inactive)
+        icon = QIcon(_draw_settings_icon(TEXT_MUTED, 18, dpr))
+        self.settings_footer_btn.setIcon(icon)
+        self.settings_back_btn.setIcon(
+            QIcon(_draw_themed_icon("back_icon.svg", TEXT_MUTED, 18, dpr))
+        )
 
-    def _retranslate_nav_buttons(self) -> None:
-        for btn, label_key, _draw_fn in self._nav_specs:
-            btn.setText(f"  {t(label_key)}")
+    def _open_settings(self) -> None:
+        self._show_page(1)
 
-    def _apply_nav_icon(self, btn: QPushButton, checked: bool) -> None:
-        icons = self._nav_icon_cache.get(id(btn))
-        if icons is not None:
-            btn.setIcon(icons[1] if checked else icons[0])
+    def _close_settings(self) -> None:
+        self._show_page(0)
 
     def _refresh_dpi_dependent_icons(self) -> None:
-        """Re-render our own hand-drawn icons (nav icons, the power button disc)
-        at the window's actual devicePixelRatioF(). Called once from showEvent()
-        and once more shortly after on a timer, because on this app that value
-        was observed to sometimes only settle to its correct scaled value a
-        moment after the window is first shown - most reliably reproduced when
-        launched elevated (UAC "runas")."""
-        self._refresh_nav_icons()
-        self.connect_btn.refresh()
+        """Re-render our own hand-drawn icons (settings icons, connect toggle)
+        at the window's actual devicePixelRatioF(). Called once from
+        showEvent() and once more shortly after on a timer, because on this
+        app that value was observed to sometimes only settle to its correct
+        scaled value a moment after the window is first shown - most reliably
+        reproduced when launched elevated (UAC "runas")."""
+        self._refresh_settings_icon()
+        self.connect_toggle.refresh()
 
     def showEvent(self, event) -> None:  # noqa: N802 - Qt override
         super().showEvent(event)
@@ -761,38 +654,20 @@ class MainWindow(QMainWindow):
     def _build_content(self) -> QWidget:
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(28, 24, 28, 24)
+        layout.setContentsMargins(24, 18, 24, 20)
         layout.setSpacing(18)
 
         self.pages = QStackedWidget()
-        self.pages.addWidget(self._build_home_page())
-        self.pages.addWidget(self._build_servers_page())
+        self.pages.addWidget(self._build_main_page())
         self.pages.addWidget(self._build_settings_page())
         layout.addWidget(self.pages, 1)
 
         return content
 
     def _build_add_menu_button(self) -> QPushButton:
+        # Plain global QPushButton style - same look as the Settings button, no
+        # special accent border.
         btn = QPushButton(f" {t('btn_add')}")
-        # Deliberately not the plain global QPushButton style - this and the main
-        # connect button are the app's two primary calls-to-action, so both wear a
-        # permanent accent border rather than picking one up only on hover.
-        btn.setStyleSheet(
-            f"QPushButton {{"
-            f"    background-color: {BG_CARD};"
-            f"    border: 1.5px solid {ACCENT};"
-            f"    border-radius: 8px;"
-            f"    padding: 8px 14px;"
-            f"    min-height: 18px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"    background-color: {BG_CARD_ALT};"
-            f"    border-color: {ACCENT_HOVER};"
-            f"}}"
-            f"QPushButton:pressed {{"
-            f"    background-color: {BG_CARD};"
-            f"}}"
-        )
         menu = QMenu(btn)
 
         dpr = self.devicePixelRatioF() or 1.0
@@ -826,81 +701,67 @@ class MainWindow(QMainWindow):
         )
         return btn
 
-    def _build_home_page(self) -> QWidget:
+    def _build_main_page(self) -> QWidget:
+        """Header: status (left) + connect toggle (right). Stats row: time /
+        traffic / IP as three columns. Profile list fills the rest. Footer:
+        Settings (left) ... Add (right)."""
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
-
-        layout.addStretch(1)
-
-        self.connect_btn = PowerButton()
-        self.connect_btn.setFixedSize(POWER_BTN_SIZE, POWER_BTN_SIZE)
-        self.connect_btn.clicked.connect(self._on_connect_button_clicked)
-        btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
-        btn_row.addWidget(self.connect_btn)
-        btn_row.addStretch(1)
-        layout.addLayout(btn_row)
-
-        layout.addSpacing(18)
-
-        self.status_text = QLabel(t("status_idle"))
-        self.status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_text.setStyleSheet("font-size: 14px;")
-        layout.addWidget(self.status_text)
-
-        # Fixed height and always visible (even with empty text) so the connect
-        # button doesn't jump up/down as these rows fill in or clear - a hidden
-        # widget is excluded from layout entirely, which was shifting the stretch
-        # above the button every time connection state changed.
-        self.time_label = QLabel()
-        self.time_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.time_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        self.time_label.setFixedHeight(18)
-        layout.addWidget(self.time_label)
-
-        self.traffic_label = QLabel()
-        self.traffic_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.traffic_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        self.traffic_label.setFixedHeight(18)
-        layout.addWidget(self.traffic_label)
-
-        self.ip_label = QLabel()
-        self.ip_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.ip_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        self.ip_label.setFixedHeight(18)
-        layout.addWidget(self.ip_label)
-
-        layout.addStretch(2)
-
-        add_btn = self._build_add_menu_button()
-        add_btn.setFixedWidth(220)
-        bottom_row = QHBoxLayout()
-        bottom_row.addStretch(1)
-        bottom_row.addWidget(add_btn)
-        bottom_row.addStretch(1)
-
-        layout.addLayout(bottom_row)
-        return page
-
-    def _build_servers_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
+        layout.setSpacing(14)
 
         header_row = QHBoxLayout()
-        self.servers_title_label = QLabel(t("servers_title"))
-        self.servers_title_label.setStyleSheet("font-size: 16px; font-weight: 600;")
-        header_row.addWidget(self.servers_title_label)
-        header_row.addStretch(1)
-        add_btn = self._build_add_menu_button()
-        header_row.addWidget(add_btn)
+        header_row.setSpacing(16)
+
+        self.status_text = QLabel(t("status_idle"))
+        self.status_text.setStyleSheet("font-size: 14px; font-weight: 600;")
+        self.status_text.setWordWrap(True)
+        header_row.addWidget(self.status_text, 1)
+
+        self.connect_toggle = ToggleSwitch()
+        self.connect_toggle.clicked.connect(self._on_connect_button_clicked)
+        header_row.addWidget(self.connect_toggle, 0, Qt.AlignmentFlag.AlignRight)
+
         layout.addLayout(header_row)
+
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(20)
+
+        self.time_label = QLabel()
+        self.time_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.time_label.setFixedHeight(16)
+        stats_row.addWidget(self.time_label, 1)
+
+        self.traffic_label = QLabel()
+        self.traffic_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.traffic_label.setFixedHeight(16)
+        stats_row.addWidget(self.traffic_label, 1)
+
+        self.ip_label = QLabel()
+        self.ip_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self.ip_label.setFixedHeight(16)
+        stats_row.addWidget(self.ip_label, 1)
+
+        layout.addLayout(stats_row)
 
         self.profile_list = QListWidget()
         self._row_checkboxes: dict[str, QCheckBox] = {}
         layout.addWidget(self.profile_list, 1)
+
+        footer_row = QHBoxLayout()
+        footer_row.setSpacing(12)
+
+        self.settings_footer_btn = QPushButton(f" {t('nav_settings')}")
+        self.settings_footer_btn.setIconSize(QSize(18, 18))
+        self.settings_footer_btn.clicked.connect(self._open_settings)
+        footer_row.addWidget(self.settings_footer_btn)
+
+        footer_row.addStretch(1)
+
+        add_btn = self._build_add_menu_button()
+        footer_row.addWidget(add_btn)
+
+        layout.addLayout(footer_row)
 
         return page
 
@@ -910,9 +771,19 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(14)
 
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
+        self.settings_back_btn = QPushButton()
+        self.settings_back_btn.setStyleSheet(ICON_BUTTON_STYLESHEET)
+        self.settings_back_btn.setIconSize(QSize(18, 18))
+        self.settings_back_btn.clicked.connect(self._close_settings)
+        title_row.addWidget(self.settings_back_btn)
+
         self.settings_title_label = QLabel(t("settings_title"))
         self.settings_title_label.setStyleSheet("font-size: 16px; font-weight: 600;")
-        layout.addWidget(self.settings_title_label)
+        title_row.addWidget(self.settings_title_label)
+        title_row.addStretch(1)
+        layout.addLayout(title_row)
 
         language_row = QHBoxLayout()
         self.language_row_label = QLabel(t("language_label"))
@@ -961,21 +832,43 @@ class MainWindow(QMainWindow):
 
         dpr = self.devicePixelRatioF() or 1.0
 
+        action_row = QHBoxLayout()
+        action_row.setSpacing(8)
+
         self.split_tunnel_btn = QPushButton(f" {t('split_tunnel_btn')}")
         self.split_tunnel_btn.setIcon(
             QIcon(_draw_themed_icon("split_tunnel_icon.svg", TEXT_MUTED, 20, dpr))
         )
         self.split_tunnel_btn.setIconSize(SPLIT_TUNNEL_ICON_SIZE)
         self.split_tunnel_btn.clicked.connect(self.open_split_tunnel_settings)
-        layout.addWidget(self.split_tunnel_btn)
+        action_row.addWidget(self.split_tunnel_btn, 1)
 
         self.test_btn = QPushButton(_speed_test_idle_text())
         self.test_btn.setIcon(QIcon(_draw_themed_icon("speed_icon.svg", TEXT_MUTED, 20, dpr)))
         self.test_btn.setIconSize(SPEED_ICON_SIZE)
         self.test_btn.clicked.connect(self.test_connection)
-        layout.addWidget(self.test_btn)
+        action_row.addWidget(self.test_btn, 1)
+
+        layout.addLayout(action_row)
+
+        self.export_logs_btn = QPushButton(f" {t('export_logs_btn')}")
+        self.export_logs_btn.setIcon(
+            QIcon(_draw_themed_icon("logs_icon.svg", TEXT_MUTED, 20, dpr))
+        )
+        self.export_logs_btn.setIconSize(QSize(20, 20))
+        self.export_logs_btn.clicked.connect(self._export_logs)
+        layout.addWidget(self.export_logs_btn)
 
         layout.addStretch(1)
+
+        brand_label = QLabel(
+            f'<span style="font-weight:700; font-size:13px;">{APP_NAME}</span>'
+            f'&nbsp;&nbsp;<span style="color:{TEXT_MUTED}; font-size:11px;">'
+            f"v{APP_VERSION}</span>"
+        )
+        brand_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(brand_label)
+
         return page
 
     def _on_language_selected(self, language: str) -> None:
@@ -992,8 +885,7 @@ class MainWindow(QMainWindow):
         changes. Dialogs/menus built fresh each time they're opened don't need
         this - they read t() at construction and so already show the current
         language the next time they're shown."""
-        self._retranslate_nav_buttons()
-        self.servers_title_label.setText(t("servers_title"))
+        self.settings_footer_btn.setText(f" {t('nav_settings')}")
         self.settings_title_label.setText(t("settings_title"))
         self.language_row_label.setText(t("language_label"))
         self.kill_switch_checkbox.setText(t("kill_switch_label"))
@@ -1001,7 +893,7 @@ class MainWindow(QMainWindow):
         self.autostart_checkbox.setText(t("autostart_label"))
         self.auto_connect_checkbox.setText(t("auto_connect_label"))
         self.split_tunnel_btn.setText(f" {t('split_tunnel_btn')}")
-        self.export_logs_btn.setText(f"  {t('export_logs_btn')}")
+        self.export_logs_btn.setText(f" {t('export_logs_btn')}")
 
         # Mid-test the button shows idle-text + "..."; anything else (enabled) is idle.
         was_testing = not self.test_btn.isEnabled()
@@ -1013,6 +905,7 @@ class MainWindow(QMainWindow):
             action.setText(t(key))
 
         self.tray_show_action.setText(t("tray_open"))
+        self.tray_connect_action.setText(t("tray_connect"))
         self.tray_disconnect_action.setText(t("tray_disconnect"))
         self.tray_quit_action.setText(t("tray_quit"))
 
@@ -1021,14 +914,16 @@ class MainWindow(QMainWindow):
 
     def _show_page(self, index: int) -> None:
         self.pages.setCurrentIndex(index)
-        for i, btn in enumerate(self.nav_buttons):
-            btn.setChecked(i == index)
 
     def _build_tray_menu(self):
         menu = QMenu()
         self.tray_show_action = QAction(t("tray_open"), self)
         self.tray_show_action.triggered.connect(self.showNormal)
         menu.addAction(self.tray_show_action)
+
+        self.tray_connect_action = QAction(t("tray_connect"), self)
+        self.tray_connect_action.triggered.connect(self.connect_selected)
+        menu.addAction(self.tray_connect_action)
 
         self.tray_disconnect_action = QAction(t("tray_disconnect"), self)
         self.tray_disconnect_action.triggered.connect(self.disconnect)
@@ -1549,7 +1444,6 @@ class MainWindow(QMainWindow):
             else "kill_switch_hint"
         )
         text = t(key)
-        self.kill_switch_checkbox.setToolTip(text)
         self.kill_switch_hint_label.setText(text)
 
     def _on_auto_connect_toggled(self, checked: bool) -> None:
@@ -1568,10 +1462,12 @@ class MainWindow(QMainWindow):
             self.autostart_checkbox.setChecked(not checked)
             self.autostart_checkbox.blockSignals(False)
 
-    def _update_power_button(self, color: str, tooltip: str, disconnect_action: bool) -> None:
+    def _update_toggle_button(
+        self, color: str, tooltip: str, disconnect_action: bool, on: bool
+    ) -> None:
         self._connect_action_is_disconnect = disconnect_action
-        self.connect_btn.setToolTip(tooltip)
-        self.connect_btn.set_state(color)
+        self.connect_toggle.setToolTip(tooltip)
+        self.connect_toggle.set_state(color, on)
 
     def _set_status(
         self,
@@ -1587,20 +1483,20 @@ class MainWindow(QMainWindow):
             self.status_text.setText(message)
             self.tray.setIcon(self.icon_connecting)
             self.tray.setToolTip(t("tray_tooltip_connecting", app=APP_NAME))
-            self._update_power_button(CONNECTING, message, disconnect_action=False)
+            self._update_toggle_button(CONNECTING, message, disconnect_action=False, on=True)
         elif kill_switch:
             message = t("status_killswitch")
             self.status_text.setText(message)
             self.tray.setIcon(self.icon_error)
             self.tray.setToolTip(t("tray_tooltip_killswitch", app=APP_NAME))
-            self._update_power_button(WARNING, message, disconnect_action=True)
+            self._update_toggle_button(WARNING, message, disconnect_action=True, on=True)
         elif error:
             retrying = self.pending_reconnect_profile_name is not None
             message = t("status_error") + (t("status_error_retry_suffix") if retrying else "")
             self.status_text.setText(message)
             self.tray.setIcon(self.icon_error)
             self.tray.setToolTip(t("tray_tooltip_error", app=APP_NAME))
-            self._update_power_button(ERROR, message, disconnect_action=retrying)
+            self._update_toggle_button(ERROR, message, disconnect_action=retrying, on=retrying)
         elif connected:
             message = t("status_connected", name=self.active_profile_name)
             self.status_text.setText(message)
@@ -1608,24 +1504,33 @@ class MainWindow(QMainWindow):
             self.tray.setToolTip(
                 t("tray_tooltip_connected", app=APP_NAME, name=self.active_profile_name)
             )
-            self._update_power_button(CONNECTED, message, disconnect_action=True)
+            self._update_toggle_button(CONNECTED, message, disconnect_action=True, on=True)
         else:
             self.status_text.setText(t("status_idle"))
             self.tray.setIcon(self.icon_disconnected)
             self.tray.setToolTip(t("tray_tooltip_disconnected", app=APP_NAME))
-            self._update_power_button(
-                ACCENT, t("status_connect_tooltip"), disconnect_action=False
+            self._update_toggle_button(
+                ACCENT, t("status_connect_tooltip"), disconnect_action=False, on=False
             )
+
+        # Same "is there an active/in-progress session" logic as the on= flags
+        # above - only the applicable one of connect/disconnect shows in the
+        # tray menu at a time.
+        show_disconnect = connecting or kill_switch or connected or (
+            error and self.pending_reconnect_profile_name is not None
+        )
+        self.tray_connect_action.setVisible(not show_disconnect)
+        self.tray_disconnect_action.setVisible(show_disconnect)
 
         if connected:
             if self._last_ip_country is not None:
                 ip, country = self._last_ip_country
                 self.ip_label.setText(t("ip_label", value=f"{ip} · {country}"))
         else:
-            self.time_label.setText("")
-            self.traffic_label.setText("")
+            self.time_label.setText(t("time_label", value="—"))
+            self.traffic_label.setText(t("traffic_label", value="—"))
             self._last_ip_country = None
-            self.ip_label.setText("")
+            self.ip_label.setText(t("ip_label", value="—"))
             self._ip_lookup_generation += 1
 
     def _tick(self) -> None:
