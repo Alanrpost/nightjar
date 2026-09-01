@@ -134,6 +134,16 @@ _STRINGS: dict[str, dict[str, str]] = {
     "dlg_subscription_imported_body": {
         "ru": "Импортировано профилей: {count}", "en": "Imported {count} profile(s)",
     },
+    "btn_refresh_subscriptions": {"ru": "Обновить", "en": "Refresh"},
+    "dlg_no_subscriptions_title": {"ru": "Нет подписок", "en": "No subscriptions"},
+    "dlg_no_subscriptions_body": {
+        "ru": "Пока нет ни одного профиля, добавленного по ссылке на подписку.",
+        "en": "No profile has been added from a subscription link yet.",
+    },
+    "dlg_subscriptions_refreshed_body": {
+        "ru": "Подписки обновлены, профилей: {count}",
+        "en": "Subscriptions refreshed, {count} profile(s)",
+    },
     "file_dialog_qr_title": {
         "ru": "Выбрать изображение с QR-кодом", "en": "Select a QR code image",
     },

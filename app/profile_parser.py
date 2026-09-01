@@ -40,6 +40,7 @@ class Profile:
     insecure: bool = False  # hysteria2, tuic: skip certificate verification
     congestion_control: str = "bbr"  # tuic
     raw_config: str = ""  # hand-edited sing-box JSON; overrides all fields above when set
+    source_url: str = ""  # subscription URL this profile was imported from, if any
 
     def to_dict(self) -> dict:
         return {
@@ -68,6 +69,7 @@ class Profile:
             "insecure": self.insecure,
             "congestion_control": self.congestion_control,
             "raw_config": self.raw_config,
+            "source_url": self.source_url,
         }
 
 

@@ -63,7 +63,7 @@ from .stats import fetch_traffic, format_bytes, format_duration
 from .profile_parser import Profile, ProfileParseError, looks_like_profile_uri, parse_profile_uri
 
 APP_NAME = "Nightjar"
-APP_VERSION = "1.4.1"
+APP_VERSION = "1.4.2"
 
 STATUS_TICK_MS = 1000
 RECONNECT_DELAYS_MS = [3000, 6000, 12000, 24000, 30000]
@@ -555,6 +555,7 @@ class MainWindow(QMainWindow):
     connection_test_result = Signal(str)
     exit_ip_result = Signal(int, str, str)
     subscription_import_result = Signal(object)
+    subscription_refresh_result = Signal(object)
     update_check_result = Signal(object)
     update_download_result = Signal(object)
 
@@ -581,6 +582,7 @@ class MainWindow(QMainWindow):
         self.connection_test_result.connect(self._show_connection_test_result)
         self.exit_ip_result.connect(self._show_exit_ip_result)
         self.subscription_import_result.connect(self._show_subscription_import_result)
+        self.subscription_refresh_result.connect(self._show_subscription_refresh_result)
         self.update_check_result.connect(self._show_update_available)
         self.update_download_result.connect(self._show_update_download_result)
 
@@ -787,6 +789,15 @@ class MainWindow(QMainWindow):
 
         footer_row.addStretch(1)
 
+        dpr = self.devicePixelRatioF() or 1.0
+        self.refresh_subscriptions_btn = QPushButton(f" {t('btn_refresh_subscriptions')}")
+        self.refresh_subscriptions_btn.setIcon(
+            QIcon(_draw_themed_icon("refresh_icon.svg", TEXT_MUTED, 18, dpr))
+        )
+        self.refresh_subscriptions_btn.setIconSize(QSize(18, 18))
+        self.refresh_subscriptions_btn.clicked.connect(self._refresh_subscriptions)
+        footer_row.addWidget(self.refresh_subscriptions_btn)
+
         add_btn = self._build_add_menu_button()
         footer_row.addWidget(add_btn)
 
@@ -915,6 +926,7 @@ class MainWindow(QMainWindow):
         this - they read t() at construction and so already show the current
         language the next time they're shown."""
         self.settings_footer_btn.setText(f" {t('nav_settings')}")
+        self.refresh_subscriptions_btn.setText(f" {t('btn_refresh_subscriptions')}")
         self.settings_title_label.setText(t("settings_title"))
         self.language_row_label.setText(t("language_label"))
         self.kill_switch_checkbox.setText(t("kill_switch_label"))
@@ -1130,12 +1142,12 @@ class MainWindow(QMainWindow):
     def _run_subscription_import(self, url: str) -> None:
         try:
             profiles = subscription.fetch_subscription_profiles(url)
-            self.subscription_import_result.emit((profiles, None))
+            self.subscription_import_result.emit((url, profiles, None))
         except subscription.SubscriptionError as exc:
-            self.subscription_import_result.emit((None, str(exc)))
+            self.subscription_import_result.emit((url, None, str(exc)))
 
     def _show_subscription_import_result(self, result: tuple) -> None:
-        profiles, error = result
+        url, profiles, error = result
         if error is not None:
             QMessageBox.warning(self, t("dlg_import_failed_title"), error)
             return
@@ -1148,6 +1160,7 @@ class MainWindow(QMainWindow):
                 name = f"{profile.name} ({suffix})"
                 suffix += 1
             profile.name = name
+            profile.source_url = url
             used_names.add(name)
             self.profiles = profile_store.add_profile(profile)
 
@@ -1157,6 +1170,66 @@ class MainWindow(QMainWindow):
             t("dlg_profile_imported_title"),
             t("dlg_subscription_imported_body", count=len(profiles)),
         )
+
+    def _refresh_subscriptions(self) -> None:
+        urls = sorted({p.source_url for p in self.profiles if p.source_url})
+        if not urls:
+            QMessageBox.information(
+                self, t("dlg_no_subscriptions_title"), t("dlg_no_subscriptions_body")
+            )
+            return
+        self.tray.showMessage(
+            APP_NAME, t("tray_msg_subscription_importing"),
+            QSystemTrayIcon.MessageIcon.Information, 3000,
+        )
+        threading.Thread(
+            target=self._run_subscription_refresh, args=(urls,), daemon=True
+        ).start()
+
+    def _run_subscription_refresh(self, urls: list[str]) -> None:
+        results = []
+        for url in urls:
+            try:
+                results.append((url, subscription.fetch_subscription_profiles(url), None))
+            except subscription.SubscriptionError as exc:
+                results.append((url, None, str(exc)))
+        self.subscription_refresh_result.emit(results)
+
+    def _show_subscription_refresh_result(self, results: list) -> None:
+        updated_count = 0
+        errors = []
+        for url, profiles, error in results:
+            if error is not None:
+                errors.append(error)
+                continue
+
+            # Drop this subscription's old profiles first, so its own stale
+            # names don't force needless "(2)" suffixes on its own refetch.
+            self.profiles = [p for p in self.profiles if p.source_url != url]
+            used_names = {p.name for p in self.profiles}
+            for profile in profiles:
+                name = profile.name
+                suffix = 2
+                while name in used_names:
+                    name = f"{profile.name} ({suffix})"
+                    suffix += 1
+                profile.name = name
+                profile.source_url = url
+                used_names.add(name)
+                self.profiles.append(profile)
+            updated_count += len(profiles)
+
+        profile_store.save_profiles(self.profiles)
+        self._refresh_profile_list()
+
+        if errors:
+            QMessageBox.warning(self, t("dlg_import_failed_title"), "\n".join(errors))
+        elif updated_count:
+            QMessageBox.information(
+                self,
+                t("dlg_profile_imported_title"),
+                t("dlg_subscriptions_refreshed_body", count=updated_count),
+            )
 
     def _selected_profile(self):
         if not self.selected_profile_name:
