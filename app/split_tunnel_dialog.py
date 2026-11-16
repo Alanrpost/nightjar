@@ -82,7 +82,14 @@ class SplitTunnelDialog(QDialog):
             self.processes_edit.setText(",".join(dialog.selected_names()))
 
     def result_processes(self) -> list[str]:
-        return [p.strip() for p in self.processes_edit.text().split(",") if p.strip()]
+        result: list[str] = []
+        seen: set[str] = set()
+        for p in self.processes_edit.text().split(","):
+            p = p.strip()
+            if p and p.lower() not in seen:
+                seen.add(p.lower())
+                result.append(p)
+        return result
 
     def result_domains(self) -> list[str]:
         return [d.strip().lower() for d in self.domains_edit.text().split(",") if d.strip()]
